@@ -41,6 +41,8 @@ function App() {
   const [isSearchingMetadata, setIsSearchingMetadata] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
+  const isAutoCreatingFromMetadata = isSaving && !editingMovie
+
   useEffect(() => {
     void loadMovies()
   }, [])
@@ -209,6 +211,21 @@ function App() {
       setIsSearchingMetadata(true)
       setErrorMessage('')
       const details = await getMetadataDetails(result.tmdbId)
+      const nextForm = buildSubmissionForm(
+        {
+          ...form,
+          title: details.title,
+          year: details.year,
+          overview: details.overview,
+          posterUrl: details.posterUrl,
+          backdropUrl: details.backdropUrl,
+          trailerUrl: details.trailerUrl,
+          digitalReleaseDate: details.digitalReleaseDate,
+          tmdbId: details.tmdbId,
+        },
+        `${details.title}${details.year ? ` ${details.year}` : ''}`,
+      )
+
       setForm((current) => ({
         ...current,
         title: details.title,
@@ -221,9 +238,18 @@ function App() {
         tmdbId: details.tmdbId,
       }))
       setMetadataQuery(`${details.title}${details.year ? ` ${details.year}` : ''}`)
+
+      if (!editingMovie) {
+        setIsSaving(true)
+        const created = await createMovie(nextForm)
+        setMovies((current) => [created, ...current])
+        setSelectedMovie(created)
+        closeEditor()
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to apply metadata.')
     } finally {
+      setIsSaving(false)
       setIsSearchingMetadata(false)
     }
   }
@@ -251,6 +277,10 @@ function App() {
     }
 
     handleQuickAddInput(droppedText)
+  }
+
+  function getMovieDestination(movie: Movie) {
+    return movie.providerPageUrl || (movie.tmdbId ? `https://www.themoviedb.org/movie/${movie.tmdbId}` : '')
   }
 
   return (
@@ -375,8 +405,9 @@ function App() {
       )}
 
       {selectedMovie ? (
-        <aside className="details-panel">
-          <div className="details-backdrop">
+        <div className="modal-scrim details-scrim" onClick={() => setSelectedMovie(null)}>
+          <aside className="details-panel details-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="details-backdrop">
             <div
               className="backdrop-art"
               style={
@@ -393,80 +424,81 @@ function App() {
                 Close
               </button>
             </div>
-          </div>
-          <div className="details-content">
-            <div className="details-header">
-              <div>
-                <p className="eyebrow">{selectedMovie.status}</p>
-                <h2>
-                  {selectedMovie.title}
-                  {selectedMovie.year ? ` (${selectedMovie.year})` : ''}
-                </h2>
-              </div>
-              <div className="details-actions">
-                <button type="button" className="ghost-button" onClick={() => openEditDialog(selectedMovie)}>
-                  Edit
-                </button>
-                <button type="button" className="ghost-button danger" onClick={() => void removeMovie(selectedMovie)}>
-                  Delete
-                </button>
-                <a
-                  className={`primary-button ${selectedMovie.providerPageUrl ? '' : 'disabled-link'}`}
-                  href={selectedMovie.providerPageUrl || '#'}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(event) => {
-                    if (!selectedMovie.providerPageUrl) {
-                      event.preventDefault()
-                    }
-                  }}
-                >
-                  Download page
-                </a>
-              </div>
             </div>
-
-            <div className="details-grid">
-              <div className="details-summary">
-                <p>{selectedMovie.overview || 'Add notes or metadata to describe this entry.'}</p>
-                <dl>
-                  <div>
-                    <dt>Digital release</dt>
-                    <dd>{formatRelease(selectedMovie.digitalReleaseDate)}</dd>
-                  </div>
-                  <div>
-                    <dt>Priority</dt>
-                    <dd>{selectedMovie.priority}</dd>
-                  </div>
-                  <div>
-                    <dt>Provider page</dt>
-                    <dd>{selectedMovie.providerPageUrl || 'Not added yet'}</dd>
-                  </div>
-                </dl>
-                <div className="notes-block">
-                  <h3>Notes</h3>
-                  <p>{selectedMovie.notes || 'No notes yet.'}</p>
+            <div className="details-content">
+              <div className="details-header">
+                <div>
+                  <p className="eyebrow">{selectedMovie.status}</p>
+                  <h2>
+                    {selectedMovie.title}
+                    {selectedMovie.year ? ` (${selectedMovie.year})` : ''}
+                  </h2>
+                </div>
+                <div className="details-actions">
+                  <button type="button" className="ghost-button" onClick={() => openEditDialog(selectedMovie)}>
+                    Edit
+                  </button>
+                  <button type="button" className="ghost-button danger" onClick={() => void removeMovie(selectedMovie)}>
+                    Delete
+                  </button>
+                  <a
+                    className={`primary-button ${getMovieDestination(selectedMovie) ? '' : 'disabled-link'}`}
+                    href={getMovieDestination(selectedMovie) || '#'}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => {
+                      if (!getMovieDestination(selectedMovie)) {
+                        event.preventDefault()
+                      }
+                    }}
+                  >
+                    Open page
+                  </a>
                 </div>
               </div>
 
-              <div className="trailer-panel">
-                {selectedMovie.trailerUrl ? (
-                  <iframe
-                    title={`${selectedMovie.title} trailer`}
-                    src={toEmbedUrl(selectedMovie.trailerUrl)}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                ) : (
-                  <div className="trailer-empty">
-                    <h3>No trailer yet</h3>
-                    <p>Search TMDB metadata or paste a trailer URL to watch it here.</p>
+              <div className="details-grid">
+                <div className="details-summary">
+                  <p>{selectedMovie.overview || 'Add notes or metadata to describe this entry.'}</p>
+                  <dl>
+                    <div>
+                      <dt>Digital release</dt>
+                      <dd>{formatRelease(selectedMovie.digitalReleaseDate)}</dd>
+                    </div>
+                    <div>
+                      <dt>Priority</dt>
+                      <dd>{selectedMovie.priority}</dd>
+                    </div>
+                    <div>
+                      <dt>Provider page</dt>
+                      <dd>{selectedMovie.providerPageUrl || 'Using TMDB page fallback'}</dd>
+                    </div>
+                  </dl>
+                  <div className="notes-block">
+                    <h3>Notes</h3>
+                    <p>{selectedMovie.notes || 'No notes yet.'}</p>
                   </div>
-                )}
+                </div>
+
+                <div className="trailer-panel">
+                  {selectedMovie.trailerUrl ? (
+                    <iframe
+                      title={`${selectedMovie.title} trailer`}
+                      src={toEmbedUrl(selectedMovie.trailerUrl)}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  ) : (
+                    <div className="trailer-empty">
+                      <h3>No trailer yet</h3>
+                      <p>Search TMDB metadata or paste a trailer URL to watch it here.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        </aside>
+          </aside>
+        </div>
       ) : null}
 
       {isEditorOpen ? (
@@ -510,7 +542,7 @@ function App() {
                 type="button"
                 className="ghost-button"
                 onClick={() => void runMetadataSearch()}
-                disabled={isSearchingMetadata}
+                disabled={isSearchingMetadata || isAutoCreatingFromMetadata}
               >
                 {isSearchingMetadata ? 'Searching...' : 'Search database'}
               </button>
@@ -524,6 +556,7 @@ function App() {
                     type="button"
                     className="metadata-result"
                     onClick={() => void applyMetadata(result)}
+                    disabled={isAutoCreatingFromMetadata}
                   >
                     <div
                       className="metadata-result-poster"
@@ -688,7 +721,13 @@ function App() {
                   Cancel
                 </button>
                 <button type="submit" className="primary-button" disabled={isSaving}>
-                  {isSaving ? 'Saving...' : editingMovie ? 'Save changes' : 'Create movie'}
+                  {isSaving
+                    ? isAutoCreatingFromMetadata
+                      ? 'Adding from TMDB...'
+                      : 'Saving...'
+                    : editingMovie
+                      ? 'Save changes'
+                      : 'Create movie'}
                 </button>
               </div>
             </form>
