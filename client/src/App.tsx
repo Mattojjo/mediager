@@ -327,19 +327,11 @@ function App() {
   return (
     <div className="app-shell">
       <header className="hero-panel">
-        <div>
-          <p className="eyebrow">Personal media queue</p>
-          <h1>Mediager</h1>
-          <p className="hero-copy">
-            Track movies and shows before they hit digital release, keep the trailer close,
-            and jump straight to the page you use when it is time to download.
-          </p>
-        </div>
-        <div className="hero-actions">
-          <div className="media-switch">
+        <div className="top-bar">
+          <div className={`media-switch ${activeMediaType === 'tv' ? 'is-tv' : 'is-movie'}`}>
             <button
               type="button"
-              className={`ghost-button ${activeMediaType === 'movie' ? 'is-active' : ''}`}
+              className={`media-switch__option ${activeMediaType === 'movie' ? 'is-active' : ''}`}
               onClick={() => {
                 setActiveMediaType('movie')
                 if (!isEditorOpen) {
@@ -351,7 +343,7 @@ function App() {
             </button>
             <button
               type="button"
-              className={`ghost-button ${activeMediaType === 'tv' ? 'is-active' : ''}`}
+              className={`media-switch__option ${activeMediaType === 'tv' ? 'is-active' : ''}`}
               onClick={() => {
                 setActiveMediaType('tv')
                 if (!isEditorOpen) {
@@ -362,15 +354,19 @@ function App() {
               TV Shows
             </button>
           </div>
-          <div className="stat-card">
-            <span className="stat-label">{activeMediaType === 'movie' ? 'Movies queued' : 'Shows queued'}</span>
-            <strong>{queuedCount}</strong>
+
+          <div className="top-bar__stats">
+            <div className="stat-chip">
+              <span>{activeMediaType === 'movie' ? 'Movies' : 'Shows'}</span>
+              <strong>{queuedCount}</strong>
+            </div>
+            <div className="stat-chip accent">
+              <span>Released</span>
+              <strong>{readyCount}</strong>
+            </div>
           </div>
-          <div className="stat-card accent">
-            <span className="stat-label">Released now</span>
-            <strong>{readyCount}</strong>
-          </div>
-          <div className="hero-action-row">
+
+          <div className="top-bar__actions">
             <button type="button" className="primary-button" onClick={() => openCreateDialog('movie')}>
               Add movie
             </button>
