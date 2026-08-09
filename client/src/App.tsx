@@ -7,9 +7,10 @@ import {
   searchMetadata,
   updateMovie,
 } from './api'
-import type { MetadataSearchResult, Movie, MovieInput, MovieStatus } from './types'
+import type { MediaType, MetadataSearchResult, Movie, MovieInput, MovieStatus } from './types'
 
 const emptyForm: MovieInput = {
+  mediaType: 'movie',
   title: '',
   year: null,
   overview: '',
@@ -31,6 +32,7 @@ function App() {
   const [editingMovie, setEditingMovie] = useState<Movie | null>(null)
   const [showAdvancedFields, setShowAdvancedFields] = useState(false)
   const [form, setForm] = useState<MovieInput>(emptyForm)
+  const [activeMediaType, setActiveMediaType] = useState<MediaType>('movie')
   const [filter, setFilter] = useState<'all' | MovieStatus>('all')
   const [searchText, setSearchText] = useState('')
   const [sortMode, setSortMode] = useState<'release' | 'recent' | 'priority'>('release')
@@ -51,6 +53,7 @@ function App() {
     const query = searchText.trim().toLowerCase()
 
     return [...movies]
+      .filter((movie) => movie.mediaType === activeMediaType)
       .filter((movie) => (filter === 'all' ? true : movie.status === filter))
       .filter((movie) => {
         if (!query) {
@@ -74,7 +77,7 @@ function App() {
           right.digitalReleaseDate ?? '9999-99-99',
         )
       })
-  }, [filter, movies, searchText, sortMode])
+  }, [activeMediaType, filter, movies, searchText, sortMode])
 
   async function loadMovies() {
     try {
@@ -83,15 +86,18 @@ function App() {
       const payload = await listMovies()
       setMovies(payload)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load movies.')
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load entries.')
     } finally {
       setIsLoading(false)
     }
   }
 
-  function openCreateDialog() {
+  function openCreateDialog(mediaType: MediaType) {
     setEditingMovie(null)
-    setForm(emptyForm)
+    setForm({
+      ...emptyForm,
+      mediaType,
+    })
     setMetadataQuery('')
     setMetadataResults([])
     setShowAdvancedFields(false)
@@ -103,6 +109,7 @@ function App() {
     setEditingMovie(movie)
     setSelectedMovie(movie)
     setForm({
+      mediaType: movie.mediaType,
       title: movie.title,
       year: movie.year,
       overview: movie.overview,
@@ -126,7 +133,10 @@ function App() {
   function closeEditor() {
     setIsEditorOpen(false)
     setEditingMovie(null)
-    setForm(emptyForm)
+    setForm({
+      ...emptyForm,
+      mediaType: activeMediaType,
+    })
     setMetadataResults([])
     setMetadataQuery('')
     setShowAdvancedFields(false)
@@ -138,7 +148,7 @@ function App() {
     const normalized = buildSubmissionForm(form, metadataQuery)
 
     if (!normalized.title) {
-      setErrorMessage('Add a movie title or paste a link that contains one.')
+      setErrorMessage('Add a title or paste a link that contains one.')
       return
     }
 
@@ -158,7 +168,7 @@ function App() {
 
       closeEditor()
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to save movie.')
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to save entry.')
     } finally {
       setIsSaving(false)
     }
@@ -179,7 +189,7 @@ function App() {
         setSelectedMovie(null)
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete movie.')
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete entry.')
     }
   }
 
@@ -193,7 +203,7 @@ function App() {
     try {
       setIsSearchingMetadata(true)
       setErrorMessage('')
-      const results = await searchMetadata(normalizedQuery)
+      const results = await searchMetadata(normalizedQuery, form.mediaType)
       setMetadataResults(results)
     } catch (error) {
       setErrorMessage(
@@ -210,7 +220,7 @@ function App() {
     try {
       setIsSearchingMetadata(true)
       setErrorMessage('')
-      const details = await getMetadataDetails(result.tmdbId)
+      const details = await getMetadataDetails(result.tmdbId, form.mediaType)
       const nextForm = buildSubmissionForm(
         {
           ...form,
@@ -280,8 +290,39 @@ function App() {
   }
 
   function getMovieDestination(movie: Movie) {
-    return movie.providerPageUrl || (movie.tmdbId ? `https://www.themoviedb.org/movie/${movie.tmdbId}` : '')
+    if (movie.providerPageUrl) {
+      return movie.providerPageUrl
+    }
+
+    if (!movie.tmdbId) {
+      return ''
+    }
+
+    return `https://www.themoviedb.org/${movie.mediaType}/${movie.tmdbId}`
   }
+
+  function getDownloadDestination(movie: Movie) {
+    const normalizedTitle = movie.title
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
+
+    if (!normalizedTitle) {
+      return ''
+    }
+
+    const year = movie.year ?? new Date().getFullYear()
+    return `https://yts.proxyninja.org/movies/${normalizedTitle}-${year}`
+  }
+
+  const queuedCount = movies.filter((movie) => movie.mediaType === activeMediaType).length
+  const readyCount = movies.filter(
+    (movie) =>
+      movie.mediaType === activeMediaType &&
+      movie.digitalReleaseDate &&
+      movie.digitalReleaseDate <= today(),
+  ).length
 
   return (
     <div className="app-shell">
@@ -290,28 +331,53 @@ function App() {
           <p className="eyebrow">Personal media queue</p>
           <h1>Mediager</h1>
           <p className="hero-copy">
-            Track movies before they hit digital release, keep the trailer close,
+            Track movies and shows before they hit digital release, keep the trailer close,
             and jump straight to the page you use when it is time to download.
           </p>
         </div>
         <div className="hero-actions">
+          <div className="media-switch">
+            <button
+              type="button"
+              className={`ghost-button ${activeMediaType === 'movie' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveMediaType('movie')
+                if (!isEditorOpen) {
+                  setForm((current) => ({ ...current, mediaType: 'movie' }))
+                }
+              }}
+            >
+              Movies
+            </button>
+            <button
+              type="button"
+              className={`ghost-button ${activeMediaType === 'tv' ? 'is-active' : ''}`}
+              onClick={() => {
+                setActiveMediaType('tv')
+                if (!isEditorOpen) {
+                  setForm((current) => ({ ...current, mediaType: 'tv' }))
+                }
+              }}
+            >
+              TV Shows
+            </button>
+          </div>
           <div className="stat-card">
-            <span className="stat-label">Movies queued</span>
-            <strong>{movies.length}</strong>
+            <span className="stat-label">{activeMediaType === 'movie' ? 'Movies queued' : 'Shows queued'}</span>
+            <strong>{queuedCount}</strong>
           </div>
           <div className="stat-card accent">
             <span className="stat-label">Released now</span>
-            <strong>
-              {
-                movies.filter(
-                  (movie) => movie.digitalReleaseDate && movie.digitalReleaseDate <= today(),
-                ).length
-              }
-            </strong>
+            <strong>{readyCount}</strong>
           </div>
-          <button type="button" className="primary-button" onClick={openCreateDialog}>
-            Add movie
-          </button>
+          <div className="hero-action-row">
+            <button type="button" className="primary-button" onClick={() => openCreateDialog('movie')}>
+              Add movie
+            </button>
+            <button type="button" className="ghost-button" onClick={() => openCreateDialog('tv')}>
+              Add TV show
+            </button>
+          </div>
         </div>
       </header>
 
@@ -350,16 +416,16 @@ function App() {
       {isLoading ? (
         <section className="empty-state">
           <h2>Loading your queue</h2>
-          <p>Pulling the latest movies from your local library.</p>
+          <p>Pulling the latest entries from your local library.</p>
         </section>
       ) : visibleMovies.length === 0 ? (
         <section className="empty-state">
           <h2>Your queue is empty</h2>
           <p>
-            Add a movie manually or enrich it with TMDB metadata to start building a
-            clean download queue.
+            Add a {activeMediaType === 'movie' ? 'movie' : 'show'} manually or enrich it
+            with TMDB metadata to start building a clean download queue.
           </p>
-          <button type="button" className="primary-button" onClick={openCreateDialog}>
+          <button type="button" className="primary-button" onClick={() => openCreateDialog(activeMediaType)}>
             Create first entry
           </button>
         </section>
@@ -442,7 +508,20 @@ function App() {
                     Delete
                   </button>
                   <a
-                    className={`primary-button ${getMovieDestination(selectedMovie) ? '' : 'disabled-link'}`}
+                    className={`primary-button ${getDownloadDestination(selectedMovie) ? '' : 'disabled-link'}`}
+                    href={getDownloadDestination(selectedMovie) || '#'}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => {
+                      if (!getDownloadDestination(selectedMovie)) {
+                        event.preventDefault()
+                      }
+                    }}
+                  >
+                    Download
+                  </a>
+                  <a
+                    className={`ghost-button ${getMovieDestination(selectedMovie) ? '' : 'disabled-link'}`}
                     href={getMovieDestination(selectedMovie) || '#'}
                     target="_blank"
                     rel="noreferrer"
@@ -452,7 +531,7 @@ function App() {
                       }
                     }}
                   >
-                    Open page
+                    Source page
                   </a>
                 </div>
               </div>
@@ -462,7 +541,7 @@ function App() {
                   <p>{selectedMovie.overview || 'Add notes or metadata to describe this entry.'}</p>
                   <dl>
                     <div>
-                      <dt>Digital release</dt>
+                      <dt>{selectedMovie.mediaType === 'tv' ? 'First air date' : 'Digital release'}</dt>
                       <dd>{formatRelease(selectedMovie.digitalReleaseDate)}</dd>
                     </div>
                     <div>
@@ -506,8 +585,12 @@ function App() {
           <section className="editor-modal" onClick={(event) => event.stopPropagation()}>
             <div className="editor-header">
               <div>
-                <p className="eyebrow">{editingMovie ? 'Update entry' : 'New movie'}</p>
-                <h2>{editingMovie ? 'Edit movie' : 'Add a new movie'}</h2>
+                <p className="eyebrow">{editingMovie ? 'Update entry' : `New ${form.mediaType === 'movie' ? 'movie' : 'TV show'}`}</p>
+                <h2>
+                  {editingMovie
+                    ? `Edit ${form.mediaType === 'movie' ? 'movie' : 'TV show'}`
+                    : `Add a new ${form.mediaType === 'movie' ? 'movie' : 'TV show'}`}
+                </h2>
               </div>
               <button type="button" className="ghost-button" onClick={closeEditor}>
                 Close
@@ -521,7 +604,7 @@ function App() {
             >
               <div>
                 <label>
-                  <span>Movie name or provider link</span>
+                  <span>{form.mediaType === 'movie' ? 'Movie name or provider link' : 'TV show name or provider link'}</span>
                   <input
                     value={metadataQuery}
                     onChange={(event) => handleQuickAddInput(event.target.value)}
@@ -531,11 +614,15 @@ function App() {
                         void runMetadataSearch()
                       }
                     }}
-                    placeholder="Type a title like Inception or paste a movie page URL"
+                    placeholder={
+                      form.mediaType === 'movie'
+                        ? 'Type a title like Inception or paste a movie page URL'
+                        : 'Type a title like Severance or paste a show page URL'
+                    }
                   />
                 </label>
                 <p className="helper-copy">
-                  Type the movie name to search TMDB, or paste/drop a provider page URL and the title will be inferred when possible.
+                  Type the {form.mediaType === 'movie' ? 'movie' : 'show'} name to search TMDB, or paste/drop a provider page URL and the title will be inferred when possible.
                 </p>
               </div>
               <button
@@ -727,7 +814,7 @@ function App() {
                       : 'Saving...'
                     : editingMovie
                       ? 'Save changes'
-                      : 'Create movie'}
+                      : `Create ${form.mediaType === 'movie' ? 'movie' : 'TV show'}`}
                 </button>
               </div>
             </form>

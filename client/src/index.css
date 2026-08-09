@@ -131,6 +131,24 @@ p {
   align-content: start;
 }
 
+.media-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.media-switch .ghost-button.is-active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff8f2;
+  border-color: transparent;
+}
+
+.hero-action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .stat-card {
   padding: 18px 20px;
   border-radius: 20px;
@@ -567,6 +585,11 @@ textarea {
   .editor-header,
   .form-actions {
     flex-direction: column;
+  }
+
+  .media-switch,
+  .hero-action-row {
+    grid-template-columns: 1fr;
   }
 
   .details-actions,

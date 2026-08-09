@@ -1,4 +1,4 @@
-import type { MetadataDetails, MetadataSearchResult, Movie, MovieInput } from './types'
+import type { MediaType, MetadataDetails, MetadataSearchResult, Movie, MovieInput } from './types'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000'
 
@@ -47,10 +47,12 @@ export function deleteMovie(id: number) {
   })
 }
 
-export function searchMetadata(query: string) {
-  return request<MetadataSearchResult[]>(`/api/metadata/search?q=${encodeURIComponent(query)}`)
+export function searchMetadata(query: string, mediaType: MediaType) {
+  return request<MetadataSearchResult[]>(
+    `/api/metadata/search?q=${encodeURIComponent(query)}&type=${mediaType}`,
+  )
 }
 
-export function getMetadataDetails(tmdbId: number) {
-  return request<MetadataDetails>(`/api/metadata/${tmdbId}`)
+export function getMetadataDetails(tmdbId: number, mediaType: MediaType) {
+  return request<MetadataDetails>(`/api/metadata/${mediaType}/${tmdbId}`)
 }

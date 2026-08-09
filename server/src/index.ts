@@ -3,12 +3,13 @@ import cors from 'cors'
 import express from 'express'
 import { z } from 'zod'
 import { createMovie, deleteMovie, listMovies, updateMovie } from './db.js'
-import { fetchMovieMetadata, searchMovieMetadata } from './tmdb.js'
+import { fetchMetadata, searchMetadata } from './tmdb.js'
 
 const app = express()
 const port = Number(process.env.PORT ?? 4000)
 
 const movieSchema = z.object({
+  mediaType: z.enum(['movie', 'tv']).optional(),
   title: z.string().trim().min(1, 'Title is required.'),
   year: z.number().int().min(1888).max(2100).nullable().optional(),
   overview: z.string().optional(),
@@ -94,6 +95,7 @@ app.delete('/api/movies/:id', (request, response) => {
 
 app.get('/api/metadata/search', async (request, response) => {
   const query = String(request.query.q ?? '').trim()
+  const mediaType = request.query.type === 'tv' ? 'tv' : 'movie'
 
   if (!query) {
     response.status(400).json({ error: 'Search query is required.' })
@@ -101,11 +103,35 @@ app.get('/api/metadata/search', async (request, response) => {
   }
 
   try {
-    const results = await searchMovieMetadata(query)
+    const results = await searchMetadata(query, mediaType)
     response.json(results)
   } catch (error) {
     response.status(503).json({
       error: error instanceof Error ? error.message : 'Metadata search failed.',
+    })
+  }
+})
+
+app.get('/api/metadata/:mediaType/:tmdbId', async (request, response) => {
+  const mediaType = request.params.mediaType === 'tv' ? 'tv' : request.params.mediaType === 'movie' ? 'movie' : null
+  const tmdbId = Number(request.params.tmdbId)
+
+  if (!mediaType) {
+    response.status(400).json({ error: 'Invalid media type.' })
+    return
+  }
+
+  if (!Number.isInteger(tmdbId)) {
+    response.status(400).json({ error: 'Invalid TMDB id.' })
+    return
+  }
+
+  try {
+    const details = await fetchMetadata(tmdbId, mediaType)
+    response.json(details)
+  } catch (error) {
+    response.status(503).json({
+      error: error instanceof Error ? error.message : 'Metadata lookup failed.',
     })
   }
 })
@@ -119,7 +145,7 @@ app.get('/api/metadata/:tmdbId', async (request, response) => {
   }
 
   try {
-    const details = await fetchMovieMetadata(tmdbId)
+    const details = await fetchMetadata(tmdbId, 'movie')
     response.json(details)
   } catch (error) {
     response.status(503).json({

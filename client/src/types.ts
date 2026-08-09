@@ -1,7 +1,9 @@
 export type MovieStatus = 'planned' | 'released' | 'downloaded'
+export type MediaType = 'movie' | 'tv'
 
 export interface Movie {
   id: number
+  mediaType: MediaType
   title: string
   year: number | null
   overview: string
@@ -19,6 +21,7 @@ export interface Movie {
 }
 
 export interface MovieInput {
+  mediaType: MediaType
   title: string
   year: number | null
   overview: string

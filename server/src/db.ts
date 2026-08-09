@@ -3,9 +3,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 export type MovieStatus = 'planned' | 'released' | 'downloaded'
+export type MediaType = 'movie' | 'tv'
 
 export interface MovieRecord {
   id: number
+  mediaType: MediaType
   title: string
   year: number | null
   overview: string
@@ -23,6 +25,7 @@ export interface MovieRecord {
 }
 
 export interface MovieInput {
+  mediaType?: MediaType
   title: string
   year?: number | null
   overview?: string
@@ -51,6 +54,7 @@ database.pragma('journal_mode = WAL')
 database.exec(`
   CREATE TABLE IF NOT EXISTS movies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    media_type TEXT NOT NULL DEFAULT 'movie',
     title TEXT NOT NULL,
     year INTEGER,
     overview TEXT NOT NULL DEFAULT '',
@@ -68,9 +72,16 @@ database.exec(`
   )
 `)
 
+try {
+  database.exec("ALTER TABLE movies ADD COLUMN media_type TEXT NOT NULL DEFAULT 'movie'")
+} catch {
+  // Column already exists on databases created after media type support.
+}
+
 const movieSelect = `
   SELECT
     id,
+    media_type AS mediaType,
     title,
     year,
     overview,
@@ -92,6 +103,7 @@ const listStatement = database.prepare(`${movieSelect} ORDER BY updated_at DESC`
 const getStatement = database.prepare(`${movieSelect} WHERE id = ?`)
 const insertStatement = database.prepare(`
   INSERT INTO movies (
+    media_type,
     title,
     year,
     overview,
@@ -107,6 +119,7 @@ const insertStatement = database.prepare(`
     created_at,
     updated_at
   ) VALUES (
+    @mediaType,
     @title,
     @year,
     @overview,
@@ -126,6 +139,7 @@ const insertStatement = database.prepare(`
 const updateStatement = database.prepare(`
   UPDATE movies
   SET
+    media_type = @mediaType,
     title = @title,
     year = @year,
     overview = @overview,
@@ -147,6 +161,7 @@ function normalizeMovieInput(input: MovieInput) {
   const timestamp = new Date().toISOString()
 
   return {
+    mediaType: input.mediaType ?? 'movie',
     title: input.title.trim(),
     year: input.year ?? null,
     overview: input.overview?.trim() ?? '',
@@ -188,6 +203,7 @@ export function updateMovie(id: number, input: MovieInput): MovieRecord | undefi
 
   const merged = {
     id,
+    mediaType: input.mediaType ?? existing.mediaType,
     title: input.title.trim(),
     year: input.year ?? null,
     overview: input.overview?.trim() ?? '',

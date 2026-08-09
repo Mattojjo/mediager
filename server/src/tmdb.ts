@@ -3,21 +3,25 @@ const imageBaseUrl = 'https://image.tmdb.org/t/p/w780'
 interface TmdbSearchResponse {
   results: Array<{
     id: number
-    title: string
+    title?: string
+    name?: string
     overview: string
     poster_path: string | null
     backdrop_path: string | null
-    release_date: string | null
+    release_date?: string | null
+    first_air_date?: string | null
   }>
 }
 
 interface TmdbDetailResponse {
   id: number
-  title: string
+  title?: string
+  name?: string
   overview: string
   poster_path: string | null
   backdrop_path: string | null
-  release_date: string | null
+  release_date?: string | null
+  first_air_date?: string | null
   videos?: {
     results: Array<{
       key: string
@@ -53,6 +57,8 @@ export interface MetadataDetails extends MetadataSearchResult {
   trailerUrl: string
   digitalReleaseDate: string | null
 }
+
+export type MetadataMediaType = 'movie' | 'tv'
 
 interface TmdbConfiguration {
   baseUrl: string
@@ -100,7 +106,20 @@ function parseYear(date: string | null): number | null {
   return Number.isFinite(year) ? year : null
 }
 
-function pickDigitalReleaseDate(response: TmdbDetailResponse): string | null {
+function getReleaseDate(result: { release_date?: string | null; first_air_date?: string | null }) {
+  return result.release_date ?? result.first_air_date ?? null
+}
+
+function getTitle(result: { title?: string; name?: string }) {
+  return result.title ?? result.name ?? 'Untitled'
+}
+
+function pickDigitalReleaseDate(response: TmdbDetailResponse, mediaType: MetadataMediaType): string | null {
+  if (mediaType === 'tv') {
+    const airDate = getReleaseDate(response)
+    return airDate ? airDate.slice(0, 10) : null
+  }
+
   const releaseGroups = response.release_dates?.results ?? []
   const orderedGroups = [...releaseGroups].sort((left, right) => {
     if (left.iso_3166_1 === 'US') {
@@ -124,7 +143,8 @@ function pickDigitalReleaseDate(response: TmdbDetailResponse): string | null {
     }
   }
 
-  return response.release_date ? response.release_date.slice(0, 10) : null
+  const releaseDate = getReleaseDate(response)
+  return releaseDate ? releaseDate.slice(0, 10) : null
 }
 
 function pickTrailerUrl(response: TmdbDetailResponse): string {
@@ -161,8 +181,11 @@ async function tmdbFetch<T>(pathname: string, query: Record<string, string> = {}
   return (await response.json()) as T
 }
 
-export async function searchMovieMetadata(query: string): Promise<MetadataSearchResult[]> {
-  const response = await tmdbFetch<TmdbSearchResponse>('/search/movie', {
+export async function searchMetadata(
+  query: string,
+  mediaType: MetadataMediaType,
+): Promise<MetadataSearchResult[]> {
+  const response = await tmdbFetch<TmdbSearchResponse>(`/search/${mediaType}`, {
     query,
     include_adult: 'false',
     language: 'en-US',
@@ -171,27 +194,39 @@ export async function searchMovieMetadata(query: string): Promise<MetadataSearch
 
   return response.results.slice(0, 8).map((result) => ({
     tmdbId: result.id,
-    title: result.title,
-    year: parseYear(result.release_date),
+    title: getTitle(result),
+    year: parseYear(getReleaseDate(result)),
     overview: result.overview,
     posterUrl: buildImageUrl(result.poster_path),
   }))
 }
 
-export async function fetchMovieMetadata(tmdbId: number): Promise<MetadataDetails> {
-  const response = await tmdbFetch<TmdbDetailResponse>(`/movie/${tmdbId}`, {
-    append_to_response: 'videos,release_dates',
+export async function fetchMetadata(
+  tmdbId: number,
+  mediaType: MetadataMediaType,
+): Promise<MetadataDetails> {
+  const appendToResponse = mediaType === 'movie' ? 'videos,release_dates' : 'videos'
+  const response = await tmdbFetch<TmdbDetailResponse>(`/${mediaType}/${tmdbId}`, {
+    append_to_response: appendToResponse,
     language: 'en-US',
   })
 
   return {
     tmdbId: response.id,
-    title: response.title,
-    year: parseYear(response.release_date),
+    title: getTitle(response),
+    year: parseYear(getReleaseDate(response)),
     overview: response.overview,
     posterUrl: buildImageUrl(response.poster_path),
     backdropUrl: buildImageUrl(response.backdrop_path),
     trailerUrl: pickTrailerUrl(response),
-    digitalReleaseDate: pickDigitalReleaseDate(response),
+    digitalReleaseDate: pickDigitalReleaseDate(response, mediaType),
   }
+}
+
+export function searchMovieMetadata(query: string): Promise<MetadataSearchResult[]> {
+  return searchMetadata(query, 'movie')
+}
+
+export function fetchMovieMetadata(tmdbId: number): Promise<MetadataDetails> {
+  return fetchMetadata(tmdbId, 'movie')
 }
