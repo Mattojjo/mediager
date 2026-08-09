@@ -41,6 +41,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isSearchingMetadata, setIsSearchingMetadata] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [statusMessage, setStatusMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
   const isAutoCreatingFromMetadata = isSaving && !editingMovie
@@ -82,6 +84,7 @@ function App() {
   async function loadMovies() {
     try {
       setIsLoading(true)
+      setStatusMessage('Loading your queue...')
       setErrorMessage('')
       const payload = await listMovies()
       setMovies(payload)
@@ -89,6 +92,7 @@ function App() {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load entries.')
     } finally {
       setIsLoading(false)
+      setStatusMessage('')
     }
   }
 
@@ -154,6 +158,7 @@ function App() {
 
     try {
       setIsSaving(true)
+      setStatusMessage(editingMovie ? 'Saving changes...' : 'Creating entry...')
       setErrorMessage('')
 
       if (editingMovie) {
@@ -171,6 +176,7 @@ function App() {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to save entry.')
     } finally {
       setIsSaving(false)
+      setStatusMessage('')
     }
   }
 
@@ -182,6 +188,8 @@ function App() {
     }
 
     try {
+      setIsDeleting(true)
+      setStatusMessage('Deleting entry...')
       setErrorMessage('')
       await deleteMovie(movie.id)
       setMovies((current) => current.filter((entry) => entry.id !== movie.id))
@@ -190,6 +198,9 @@ function App() {
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to delete entry.')
+    } finally {
+      setIsDeleting(false)
+      setStatusMessage('')
     }
   }
 
@@ -202,6 +213,7 @@ function App() {
 
     try {
       setIsSearchingMetadata(true)
+      setStatusMessage('Searching TMDB...')
       setErrorMessage('')
       const results = await searchMetadata(normalizedQuery, form.mediaType)
       setMetadataResults(results)
@@ -213,12 +225,14 @@ function App() {
       )
     } finally {
       setIsSearchingMetadata(false)
+      setStatusMessage('')
     }
   }
 
   async function applyMetadata(result: MetadataSearchResult) {
     try {
       setIsSearchingMetadata(true)
+      setStatusMessage('Applying metadata...')
       setErrorMessage('')
       const details = await getMetadataDetails(result.tmdbId, form.mediaType)
       const nextForm = buildSubmissionForm(
@@ -261,6 +275,7 @@ function App() {
     } finally {
       setIsSaving(false)
       setIsSearchingMetadata(false)
+      setStatusMessage('')
     }
   }
 
@@ -367,10 +382,20 @@ function App() {
           </div>
 
           <div className="top-bar__actions">
-            <button type="button" className="primary-button" onClick={() => openCreateDialog('movie')}>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => openCreateDialog('movie')}
+              disabled={isLoading || isSaving || isSearchingMetadata || isDeleting}
+            >
               Add movie
             </button>
-            <button type="button" className="ghost-button" onClick={() => openCreateDialog('tv')}>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => openCreateDialog('tv')}
+              disabled={isLoading || isSaving || isSearchingMetadata || isDeleting}
+            >
               Add TV show
             </button>
           </div>
@@ -407,12 +432,22 @@ function App() {
         </label>
       </section>
 
+      {statusMessage ? (
+        <div className="loading-indicator" role="status" aria-live="polite">
+          <span className="loading-spinner" />
+          <span>{statusMessage}</span>
+        </div>
+      ) : null}
+
       {errorMessage ? <p className="banner error">{errorMessage}</p> : null}
 
       {isLoading ? (
         <section className="empty-state">
-          <h2>Loading your queue</h2>
-          <p>Pulling the latest entries from your local library.</p>
+          <div className="loading-state-card">
+            <span className="loading-spinner large" />
+            <h2>Loading your queue</h2>
+            <p>Pulling the latest entries from your local library.</p>
+          </div>
         </section>
       ) : visibleMovies.length === 0 ? (
         <section className="empty-state">
@@ -500,8 +535,13 @@ function App() {
                   <button type="button" className="ghost-button" onClick={() => openEditDialog(selectedMovie)}>
                     Edit
                   </button>
-                  <button type="button" className="ghost-button danger" onClick={() => void removeMovie(selectedMovie)}>
-                    Delete
+                  <button
+                    type="button"
+                    className="ghost-button danger"
+                    onClick={() => void removeMovie(selectedMovie)}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? 'Deleting…' : 'Delete'}
                   </button>
                   <a
                     className={`primary-button ${getDownloadDestination(selectedMovie) ? '' : 'disabled-link'}`}
@@ -639,7 +679,7 @@ function App() {
                     type="button"
                     className="metadata-result"
                     onClick={() => void applyMetadata(result)}
-                    disabled={isAutoCreatingFromMetadata}
+                    disabled={isAutoCreatingFromMetadata || isSearchingMetadata || isDeleting}
                   >
                     <div
                       className="metadata-result-poster"
@@ -803,7 +843,7 @@ function App() {
                 <button type="button" className="ghost-button" onClick={closeEditor}>
                   Cancel
                 </button>
-                <button type="submit" className="primary-button" disabled={isSaving}>
+                <button type="submit" className="primary-button" disabled={isSaving || isSearchingMetadata || isDeleting}>
                   {isSaving
                     ? isAutoCreatingFromMetadata
                       ? 'Adding from TMDB...'

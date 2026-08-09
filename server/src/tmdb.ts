@@ -1,4 +1,7 @@
 const imageBaseUrl = 'https://image.tmdb.org/t/p/w780'
+const metadataCache = new Map<string, { value: unknown; expiresAt: number }>()
+const inflightMetadataRequests = new Map<string, Promise<unknown>>()
+const cacheTtlMs = 10 * 60 * 1000
 
 interface TmdbSearchResponse {
   results: Array<{
@@ -106,6 +109,31 @@ function parseYear(date: string | null): number | null {
   return Number.isFinite(year) ? year : null
 }
 
+async function withCache<T>(cacheKey: string, loader: () => Promise<T>): Promise<T> {
+  const cached = metadataCache.get(cacheKey) as { value: T; expiresAt: number } | undefined
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value
+  }
+
+  const inflight = inflightMetadataRequests.get(cacheKey) as Promise<T> | undefined
+  if (inflight) {
+    return inflight
+  }
+
+  const promise = loader()
+    .then((value) => {
+      metadataCache.set(cacheKey, { value, expiresAt: Date.now() + cacheTtlMs })
+      return value
+    })
+    .finally(() => {
+      inflightMetadataRequests.delete(cacheKey)
+    })
+
+  inflightMetadataRequests.set(cacheKey, promise as Promise<unknown>)
+  return promise
+}
+
 function getReleaseDate(result: { release_date?: string | null; first_air_date?: string | null }) {
   return result.release_date ?? result.first_air_date ?? null
 }
@@ -185,42 +213,50 @@ export async function searchMetadata(
   query: string,
   mediaType: MetadataMediaType,
 ): Promise<MetadataSearchResult[]> {
-  const response = await tmdbFetch<TmdbSearchResponse>(`/search/${mediaType}`, {
-    query,
-    include_adult: 'false',
-    language: 'en-US',
-    page: '1',
-  })
+  const cacheKey = `search:${mediaType}:${query.trim().toLowerCase()}`
 
-  return response.results.slice(0, 8).map((result) => ({
-    tmdbId: result.id,
-    title: getTitle(result),
-    year: parseYear(getReleaseDate(result)),
-    overview: result.overview,
-    posterUrl: buildImageUrl(result.poster_path),
-  }))
+  return withCache(cacheKey, async () => {
+    const response = await tmdbFetch<TmdbSearchResponse>(`/search/${mediaType}`, {
+      query,
+      include_adult: 'false',
+      language: 'en-US',
+      page: '1',
+    })
+
+    return response.results.slice(0, 8).map((result) => ({
+      tmdbId: result.id,
+      title: getTitle(result),
+      year: parseYear(getReleaseDate(result)),
+      overview: result.overview,
+      posterUrl: buildImageUrl(result.poster_path),
+    }))
+  })
 }
 
 export async function fetchMetadata(
   tmdbId: number,
   mediaType: MetadataMediaType,
 ): Promise<MetadataDetails> {
-  const appendToResponse = mediaType === 'movie' ? 'videos,release_dates' : 'videos'
-  const response = await tmdbFetch<TmdbDetailResponse>(`/${mediaType}/${tmdbId}`, {
-    append_to_response: appendToResponse,
-    language: 'en-US',
-  })
+  const cacheKey = `details:${mediaType}:${tmdbId}`
 
-  return {
-    tmdbId: response.id,
-    title: getTitle(response),
-    year: parseYear(getReleaseDate(response)),
-    overview: response.overview,
-    posterUrl: buildImageUrl(response.poster_path),
-    backdropUrl: buildImageUrl(response.backdrop_path),
-    trailerUrl: pickTrailerUrl(response),
-    digitalReleaseDate: pickDigitalReleaseDate(response, mediaType),
-  }
+  return withCache(cacheKey, async () => {
+    const appendToResponse = mediaType === 'movie' ? 'videos,release_dates' : 'videos'
+    const response = await tmdbFetch<TmdbDetailResponse>(`/${mediaType}/${tmdbId}`, {
+      append_to_response: appendToResponse,
+      language: 'en-US',
+    })
+
+    return {
+      tmdbId: response.id,
+      title: getTitle(response),
+      year: parseYear(getReleaseDate(response)),
+      overview: response.overview,
+      posterUrl: buildImageUrl(response.poster_path),
+      backdropUrl: buildImageUrl(response.backdrop_path),
+      trailerUrl: pickTrailerUrl(response),
+      digitalReleaseDate: pickDigitalReleaseDate(response, mediaType),
+    }
+  })
 }
 
 export function searchMovieMetadata(query: string): Promise<MetadataSearchResult[]> {
