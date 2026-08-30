@@ -11,7 +11,6 @@ import type { MediaType, MetadataSearchResult, Movie, MovieInput, MovieStatus } 
 import { hasApiKey, hasSetupBeenShown } from './keyManager'
 import { SettingsModal } from './SettingsModal'
 import { ApiKeySetup } from './ApiKeySetup'
-import { formatRelease } from './hooks'
 
 const emptyForm: MovieInput = {
   mediaType: 'movie',
@@ -37,9 +36,7 @@ function App() {
   const [showAdvancedFields, setShowAdvancedFields] = useState(false)
   const [form, setForm] = useState<MovieInput>(emptyForm)
   const [activeMediaType, setActiveMediaType] = useState<MediaType>('movie')
-  const [filter, setFilter] = useState<'all' | MovieStatus>('all')
   const [searchText, setSearchText] = useState('')
-  const [sortMode, setSortMode] = useState<'release' | 'recent'>('release')
   const [metadataQuery, setMetadataQuery] = useState('')
   const [metadataResults, setMetadataResults] = useState<MetadataSearchResult[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -62,7 +59,6 @@ function App() {
 
     return [...movies]
       .filter((movie) => movie.mediaType === activeMediaType)
-      .filter((movie) => (filter === 'all' ? true : movie.status === filter))
       .filter((movie) => {
         if (!query) {
           return true
@@ -72,16 +68,7 @@ function App() {
           value.toLowerCase().includes(query),
         )
       })
-      .sort((left, right) => {
-        if (sortMode === 'recent') {
-          return right.updatedAt.localeCompare(left.updatedAt)
-        }
-
-        return (left.digitalReleaseDate ?? '9999-99-99').localeCompare(
-          right.digitalReleaseDate ?? '9999-99-99',
-        )
-      })
-  }, [activeMediaType, filter, movies, searchText, sortMode])
+  }, [activeMediaType, movies, searchText])
 
   async function loadMovies() {
     try {
@@ -415,24 +402,6 @@ function App() {
             placeholder="Filter by title, overview, or notes"
           />
         </label>
-
-        <label>
-          <span>Status</span>
-          <select value={filter} onChange={(event) => setFilter(event.target.value as 'all' | MovieStatus)}>
-            <option value="all">All</option>
-            <option value="planned">Planned</option>
-            <option value="released">Released</option>
-            <option value="downloaded">Downloaded</option>
-          </select>
-        </label>
-
-        <label>
-          <span>Sort by</span>
-          <select value={sortMode} onChange={(event) => setSortMode(event.target.value as 'release' | 'recent')}>
-            <option value="release">Release date</option>
-            <option value="recent">Recently updated</option>
-          </select>
-        </label>
       </section>
 
       {errorMessage && !isEditorOpen ? <p className="banner error">{errorMessage}</p> : null}
@@ -486,9 +455,6 @@ function App() {
                     {movie.year ? ` (${movie.year})` : ''}
                   </h3>
                   <p>{movie.overview || 'No overview yet.'}</p>
-                </div>
-                <div className="movie-card-meta">
-                  <span>{formatRelease(movie.digitalReleaseDate)}</span>
                 </div>
               </div>
             </article>
@@ -570,12 +536,6 @@ function App() {
               <div className="details-grid">
                 <div className="details-summary">
                   <p>{selectedMovie.overview || 'Add notes or metadata to describe this entry.'}</p>
-                  <dl>
-                    <div>
-                      <dt>{selectedMovie.mediaType === 'tv' ? 'First air date' : 'Digital release'}</dt>
-                      <dd>{formatRelease(selectedMovie.digitalReleaseDate)}</dd>
-                    </div>
-                  </dl>
                   <div className="notes-block">
                     <h3>Notes</h3>
                     <p>{selectedMovie.notes || 'No notes yet.'}</p>
@@ -740,20 +700,6 @@ function App() {
                         setForm((current) => ({
                           ...current,
                           year: event.target.value ? Number(event.target.value) : null,
-                        }))
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    <span>Digital release date</span>
-                    <input
-                      type="date"
-                      value={form.digitalReleaseDate ?? ''}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          digitalReleaseDate: event.target.value || null,
                         }))
                       }
                     />

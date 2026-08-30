@@ -405,14 +405,6 @@ textarea {
   -webkit-box-orient: vertical;
 }
 
-.movie-card-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 0.9rem;
-  color: var(--muted);
-}
-
 .details-panel {
   width: min(1320px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
