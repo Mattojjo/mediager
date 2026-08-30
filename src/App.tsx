@@ -8,6 +8,9 @@ import {
   updateMovie,
 } from './api'
 import type { MediaType, MetadataSearchResult, Movie, MovieInput, MovieStatus } from './types'
+import { hasApiKey, hasSetupBeenShown } from './keyManager'
+import { SettingsModal } from './SettingsModal'
+import { ApiKeySetup } from './ApiKeySetup'
 
 const emptyForm: MovieInput = {
   mediaType: 'movie',
@@ -44,6 +47,9 @@ function App() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [showApiKeySetup, setShowApiKeySetup] = useState(!hasApiKey() && !hasSetupBeenShown())
+  const [keyUpdatedTrigger, setKeyUpdatedTrigger] = useState(0)
 
   const isAutoCreatingFromMetadata = isSaving && !editingMovie
 
@@ -392,6 +398,15 @@ function App() {
           <div className="top-bar__actions">
             <button
               type="button"
+              className="ghost-button"
+              onClick={() => setIsSettingsOpen(true)}
+              disabled={isLoading || isSaving || isSearchingMetadata || isDeleting}
+              title="Settings"
+            >
+              ⚙️
+            </button>
+            <button
+              type="button"
               className="primary-button"
               onClick={() => openCreateDialog('movie')}
               disabled={isLoading || isSaving || isSearchingMetadata || isDeleting}
@@ -681,9 +696,9 @@ function App() {
 
             {metadataResults.length > 0 ? (
               <div className="metadata-results">
-                {metadataResults.map((result) => (
+                {metadataResults.map((result, index) => (
                   <button
-                    key={result.tmdbId}
+                    key={`${result.tmdbId}-${index}`}
                     type="button"
                     className="metadata-result"
                     onClick={() => void applyMetadata(result)}
@@ -865,6 +880,23 @@ function App() {
           </section>
         </div>
       ) : null}
+
+      {showApiKeySetup && (
+        <ApiKeySetup
+          onComplete={() => {
+            setShowApiKeySetup(false)
+            setKeyUpdatedTrigger((prev) => prev + 1)
+          }}
+        />
+      )}
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onKeyUpdated={() => {
+          setKeyUpdatedTrigger((prev) => prev + 1)
+        }}
+      />
     </div>
   )
 }

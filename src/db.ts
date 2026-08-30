@@ -38,7 +38,9 @@ export interface MovieInput {
 
 function getMovies(): MovieRecord[] {
   const raw = localStorage.getItem('movies')
-  return raw ? JSON.parse(raw) : []
+  const movies = raw ? JSON.parse(raw) : []
+  // Filter out corrupted entries with ID 0
+  return movies.filter((m: MovieRecord) => m.id > 0)
 }
 
 function saveMovies(movies: MovieRecord[]): void {
@@ -47,7 +49,14 @@ function saveMovies(movies: MovieRecord[]): void {
 
 let nextId = 0
 
+function initializeNextId(): void {
+  const movies = getMovies()
+  const maxId = movies.reduce((max, movie) => Math.max(max, movie.id), 0)
+  nextId = maxId
+}
+
 export function listMovies(): MovieRecord[] {
+  initializeNextId()
   const movies = getMovies()
   return movies.sort((a: MovieRecord, b: MovieRecord) => b.updatedAt.localeCompare(a.updatedAt))
 }

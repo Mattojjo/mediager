@@ -10,38 +10,46 @@ function parseYear(date: string | null): number | null {
   return Number.isFinite(year) ? year : null
 }
 
-// Import local storage functions
-import { listMovies as listLocalMovies } from './db'
+// Import database functions
+import { 
+  listMovies as listLocalMovies, 
+  createMovie as dbCreateMovie,
+  updateMovie as dbUpdateMovie,
+  deleteMovie as dbDeleteMovie
+} from './db'
 
 // Import types
 import type { MovieRecord, MovieInput } from './db'
 
-// TMDB configuration detection
-const tmdbReadAccessToken = import.meta.env.VITE_TMDB_READ_ACCESS_TOKEN?.trim()
-const tmdbApiKey = import.meta.env.VITE_TMDB_API_KEY?.trim()
+// Import key manager for localStorage API key
+import { getStoredApiKey } from './keyManager'
 
 async function tmdbSearch<T>(pathname: string, query: string = '', options: Record<string, string> = {}): Promise<T> {
   const baseUrl = 'https://api.themoviedb.org/3'
   const url = new URL(`${baseUrl}${pathname}`)
   url.searchParams.set('language', 'en-US')
-  url.searchParams.set('query', query)
-
-  if (tmdbReadAccessToken) {
-    url.searchParams.set('include_adult', 'false')
-    url.searchParams.set('page', '1')
-  } else if (tmdbApiKey) {
-    url.searchParams.set('api_key', tmdbApiKey)
-    url.searchParams.set('include_adult', 'false')
-    url.searchParams.set('page', '1')
+  
+  // Get the API key from localStorage
+  const tmdbApiKey = getStoredApiKey()
+  
+  if (!tmdbApiKey) {
+    throw new Error('TMDB API key not configured. Please add your API key in Settings.')
   }
+  
+  if (query) {
+    url.searchParams.set('query', query)
+  }
+
+  url.searchParams.set('api_key', tmdbApiKey)
+  url.searchParams.set('include_adult', 'false')
+  url.searchParams.set('page', '1')
 
   for (const [key, value] of Object.entries(options)) {
     url.searchParams.set(key, value)
   }
 
-  const response = await fetch(url.toString(), {
-    headers: tmdbReadAccessToken ? { Authorization: `Bearer ${tmdbReadAccessToken}` } : {},
-  })
+  const response = await fetch(url.toString())
+
 
   if (!response.ok) {
     throw new Error(`TMDB request failed with status ${response.status}`)
@@ -57,8 +65,8 @@ export async function searchMetadata(query: string, mediaType: MediaType): Promi
     return results
   }
 
-  // Try TMDB search if configured
-  if (tmdbReadAccessToken || tmdbApiKey) {
+  // Try TMDB search if API key is configured
+  if (getStoredApiKey()) {
     try {
       const endpoint = mediaType === 'movie' ? '/search/movie' : '/search/tv'
       const response = await tmdbSearch<any>(endpoint, query)
@@ -101,30 +109,53 @@ export async function searchMetadata(query: string, mediaType: MediaType): Promi
     .slice(0, 8)
 }
 
-export async function getMetadataDetails(tmdbId: number, _mediaType: MediaType): Promise<MetadataDetails> {
+export async function getMetadataDetails(tmdbId: number, mediaType: MediaType): Promise<MetadataDetails> {
+  // First check localStorage
   const records = listLocalMovies() as MovieRecord[]
   const movie = records.find((m: MovieRecord) => m.tmdbId === tmdbId)
-  if (!movie) {
+  if (movie) {
     return {
-      tmdbId: tmdbId,
-      title: 'Unknown Movie',
-      year: null,
-      overview: 'No overview available.',
-      posterUrl: '',
-      backdropUrl: '',
-      trailerUrl: '',
-      digitalReleaseDate: null,
+      tmdbId: movie.tmdbId ?? 0,
+      title: movie.title,
+      year: movie.year,
+      overview: movie.overview,
+      posterUrl: movie.posterUrl,
+      backdropUrl: movie.backdropUrl,
+      trailerUrl: movie.trailerUrl,
+      digitalReleaseDate: movie.digitalReleaseDate,
     }
   }
+
+  // Try fetching from TMDB if configured
+  if (getStoredApiKey()) {
+    try {
+      const endpoint = mediaType === 'movie' ? `/movie/${tmdbId}` : `/tv/${tmdbId}`
+      const response = await tmdbSearch<any>(endpoint)
+      return {
+        tmdbId: response.id,
+        title: response.title ?? response.name ?? 'Unknown Movie',
+        year: parseYear(response.release_date ?? response.first_air_date),
+        overview: response.overview ?? 'No overview available.',
+        posterUrl: response.poster_path ? `https://image.tmdb.org/t/p/w500${response.poster_path}` : '',
+        backdropUrl: response.backdrop_path ? `https://image.tmdb.org/t/p/w1280${response.backdrop_path}` : '',
+        trailerUrl: '',
+        digitalReleaseDate: null,
+      }
+    } catch (error) {
+      // Fall back to placeholder if TMDB fails
+    }
+  }
+
+  // Return placeholder if not found anywhere
   return {
-    tmdbId: movie.tmdbId ?? 0,
-    title: movie.title,
-    year: movie.year,
-    overview: movie.overview,
-    posterUrl: movie.posterUrl,
-    backdropUrl: movie.backdropUrl,
-    trailerUrl: movie.trailerUrl,
-    digitalReleaseDate: movie.digitalReleaseDate,
+    tmdbId: tmdbId,
+    title: 'Unknown Movie',
+    year: null,
+    overview: 'No overview available.',
+    posterUrl: '',
+    backdropUrl: '',
+    trailerUrl: '',
+    digitalReleaseDate: null,
   }
 }
 
@@ -134,69 +165,13 @@ export function listMovies(): Movie[] {
 }
 
 export function createMovie(input: MovieInput): Movie {
-  const record: MovieRecord = {
-    id: 0,
-    mediaType: input.mediaType ?? 'movie',
-    title: input.title,
-    year: input.year ?? null,
-    overview: input.overview ?? '',
-    posterUrl: input.posterUrl ?? '',
-    backdropUrl: input.backdropUrl ?? '',
-    trailerUrl: input.trailerUrl ?? '',
-    digitalReleaseDate: input.digitalReleaseDate ?? null,
-    providerPageUrl: input.providerPageUrl ?? '',
-    status: input.status ?? 'planned',
-    notes: input.notes ?? '',
-    priority: input.priority ?? 2,
-    tmdbId: input.tmdbId ?? null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }
-
-  // Save to localStorage
-  const movies = listLocalMovies() as MovieRecord[]
-  movies.push(record)
-  localStorage.setItem('movies', JSON.stringify(movies))
-
-  return { ...record }
+  return dbCreateMovie(input) as Movie
 }
 
 export function updateMovie(id: number, input: MovieInput): Movie | undefined {
-  const records = listLocalMovies() as MovieRecord[]
-  const existing = records.find((m: any) => m.id === id)
-  if (!existing) {
-    return undefined
-  }
-
-  const updated: MovieRecord = {
-    ...existing,
-    mediaType: input.mediaType ?? existing.mediaType,
-    title: input.title.trim(),
-    year: input.year ?? null,
-    overview: input.overview?.trim() ?? '',
-    posterUrl: input.posterUrl?.trim() ?? '',
-    backdropUrl: input.backdropUrl?.trim() ?? '',
-    trailerUrl: input.trailerUrl?.trim() ?? '',
-    digitalReleaseDate: input.digitalReleaseDate ?? existing.digitalReleaseDate,
-    providerPageUrl: input.providerPageUrl?.trim() ?? existing.providerPageUrl,
-    status: input.status ?? existing.status,
-    notes: input.notes?.trim() ?? existing.notes,
-    priority: input.priority ?? existing.priority,
-    tmdbId: input.tmdbId ?? existing.tmdbId,
-    updatedAt: new Date().toISOString(),
-  }
-
-  const index = records.findIndex((m: any) => m.id === id)
-  if (index !== -1) {
-    records[index] = updated
-  }
-
-  localStorage.setItem('movies', JSON.stringify(records))
-  return { ...updated }
+  return dbUpdateMovie(id, input) as Movie | undefined
 }
 
 export function deleteMovie(id: number): boolean {
-  const records = [...(listLocalMovies() as MovieRecord[])].filter((m: any) => m.id !== id)
-  localStorage.setItem('movies', JSON.stringify(records))
-  return true
+  return dbDeleteMovie(id)
 }
