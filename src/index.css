@@ -246,8 +246,8 @@ p {
 }
 
 .toolbar {
-  display: grid;
-  grid-template-columns: 1.8fr repeat(2, minmax(180px, 0.6fr));
+  display: flex;
+  justify-content: center;
   gap: 14px;
   margin: 22px 0;
 }
@@ -257,6 +257,8 @@ p {
 .metadata-search-box label {
   display: grid;
   gap: 8px;
+  width: 100%;
+  max-width: 800px;
 }
 
 .toolbar span,
