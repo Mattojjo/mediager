@@ -1,9 +1,8 @@
 node_modules/
-client/node_modules/
-server/node_modules/
 client/dist/
 server/dist/
 server/data/
+.dist/
 .DS_Store
 
 .env
@@ -14,10 +13,12 @@ server/data/
 server/.env
 server/.env.*
 !server/.env.example
+!.env.sample
 
 client/.env
 client/.env.*
 !client/.env.example
+!.env.sample
 
 *.pem
 *.p12
