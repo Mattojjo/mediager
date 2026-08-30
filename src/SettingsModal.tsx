@@ -64,6 +64,58 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   }
 
+  function handleExportDatabase() {
+    try {
+      const moviesData = localStorage.getItem('movies')
+      if (!moviesData) {
+        setErrorMessage('No database to export.')
+        return
+      }
+
+      const movies = JSON.parse(moviesData)
+      const dataStr = JSON.stringify(movies, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+      const url = URL.createObjectURL(dataBlob)
+      
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `mediager-database-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      
+      setErrorMessage('')
+      setSuccessMessage('Database exported successfully!')
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (error) {
+      setErrorMessage('Failed to export database.')
+    }
+  }
+
+  function handleClearDatabase() {
+    const confirmed = window.confirm(
+      'Are you absolutely sure you want to delete the entire database? This cannot be undone.'
+    )
+    
+    if (!confirmed) return
+    
+    const doubleConfirmed = window.confirm(
+      'This will permanently delete all movies and data. Click OK to confirm.'
+    )
+    
+    if (!doubleConfirmed) return
+    
+    try {
+      localStorage.removeItem('movies')
+      setErrorMessage('')
+      setSuccessMessage('Database cleared successfully!')
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (error) {
+      setErrorMessage('Failed to clear database.')
+    }
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -133,6 +185,32 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               </div>
             </div>
           </form>
+
+          <div className="settings-section">
+            <h3>Database</h3>
+            <p className="settings-description">
+              Manage your movie database. All data is stored locally in your browser.
+            </p>
+
+            <div className="button-group">
+              <button
+                type="button"
+                onClick={handleExportDatabase}
+                disabled={isSaving}
+                className="btn btn-primary"
+              >
+                📥 Export Database
+              </button>
+              <button
+                type="button"
+                onClick={handleClearDatabase}
+                disabled={isSaving}
+                className="btn btn-secondary"
+              >
+                🗑️ Clear Database
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
