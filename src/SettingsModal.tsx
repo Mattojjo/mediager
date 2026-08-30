@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { saveApiKey, validateApiKey, getStoredApiKey, clearApiKey, markSetupAsShown } from './keyManager'
+import { clearMovies, listMovies } from './db'
 import './Modal.css'
 
 interface SettingsModalProps {
@@ -8,11 +9,19 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [apiKey, setApiKey] = useState(getStoredApiKey() || '')
+  const [apiKey, setApiKey] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [isValidating, setIsValidating] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    void getStoredApiKey().then((storedApiKey) => {
+      setApiKey(storedApiKey ?? '')
+    })
+  }, [isOpen])
 
   if (!isOpen) return null
 
@@ -39,9 +48,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         return
       }
 
-      saveApiKey(apiKey)
+      await saveApiKey(apiKey)
       setSuccessMessage('API key saved successfully!')
-      markSetupAsShown()
+      await markSetupAsShown()
       setTimeout(() => {
         onClose()
       }, 1500)
@@ -55,28 +64,27 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   }
 
-  function handleClearKey() {
+  async function handleClearKey() {
     if (window.confirm('Are you sure you want to remove your API key?')) {
-      clearApiKey()
+      await clearApiKey()
       setApiKey('')
       setErrorMessage('')
       setSuccessMessage('')
     }
   }
 
-  function handleExportDatabase() {
+  async function handleExportDatabase() {
     try {
-      const moviesData = localStorage.getItem('movies')
-      if (!moviesData) {
+      const movies = await listMovies()
+      if (!movies.length) {
         setErrorMessage('No database to export.')
         return
       }
 
-      const movies = JSON.parse(moviesData)
       const dataStr = JSON.stringify(movies, null, 2)
       const dataBlob = new Blob([dataStr], { type: 'application/json' })
       const url = URL.createObjectURL(dataBlob)
-      
+
       const link = document.createElement('a')
       link.href = url
       link.download = `mediager-database-${new Date().toISOString().split('T')[0]}.json`
@@ -84,34 +92,33 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
-      
+
       setErrorMessage('')
       setSuccessMessage('Database exported successfully!')
       setTimeout(() => setSuccessMessage(''), 3000)
-    } catch (error) {
+    } catch {
       setErrorMessage('Failed to export database.')
     }
   }
 
-  function handleClearDatabase() {
+  async function handleClearDatabase() {
     const confirmed = window.confirm(
       'Are you absolutely sure you want to delete the entire database? This cannot be undone.'
     )
-    
+
     if (!confirmed) return
-    
+
     const doubleConfirmed = window.confirm(
       'This will permanently delete all movies and data. Click OK to confirm.'
     )
-    
+
     if (!doubleConfirmed) return
-    
+
+
     try {
-      localStorage.removeItem('movies')
-      setErrorMessage('')
-      setSuccessMessage('Database cleared successfully!')
-      setTimeout(() => setSuccessMessage(''), 3000)
-    } catch (error) {
+      await clearMovies()
+      window.location.reload()
+    } catch {
       setErrorMessage('Failed to clear database.')
     }
   }

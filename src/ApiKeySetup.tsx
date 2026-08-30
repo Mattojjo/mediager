@@ -34,7 +34,7 @@ export function ApiKeySetup({ onComplete }: ApiKeySetupProps) {
         return
       }
 
-      saveApiKey(apiKey)
+      await saveApiKey(apiKey)
       onComplete()
     } catch (error) {
       setErrorMessage(
@@ -46,9 +46,8 @@ export function ApiKeySetup({ onComplete }: ApiKeySetupProps) {
     }
   }
 
-  function handleSkip() {
-    // Allow skipping for now, but they can still use local storage search
-    markSetupAsShown()
+  async function handleSkip() {
+    await markSetupAsShown()
     onComplete()
   }
 
@@ -68,7 +67,7 @@ export function ApiKeySetup({ onComplete }: ApiKeySetupProps) {
               </p>
 
               <p className="setup-description">
-                Your API key will be stored <strong>only in your browser's local storage</strong> and never sent to external servers (except to TMDB when searching).
+                Your API key will be stored <strong>only in your browser's local database</strong> and never sent to external servers (except to TMDB when searching).
               </p>
 
               <label htmlFor="setup-api-key">TMDB API Key</label>

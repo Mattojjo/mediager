@@ -46,13 +46,22 @@ function App() {
   const [statusMessage, setStatusMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [showApiKeySetup, setShowApiKeySetup] = useState(!hasApiKey() && !hasSetupBeenShown())
+  const [showApiKeySetup, setShowApiKeySetup] = useState(false)
 
   const isAutoCreatingFromMetadata = isSaving && !editingMovie
 
   useEffect(() => {
     void loadMovies()
+    void loadApiKeySetupState()
   }, [])
+
+  async function loadApiKeySetupState() {
+    const [hasKey, hasSeenSetup] = await Promise.all([
+      hasApiKey(),
+      hasSetupBeenShown(),
+    ])
+    setShowApiKeySetup(!hasKey && !hasSeenSetup)
+  }
 
   const visibleMovies = useMemo(() => {
     const query = searchText.trim().toLowerCase()

@@ -1,11 +1,11 @@
 # Mediager
 
-Mediager is a single-user movie queue for titles you want to download later. It stores your watchlist locally using browser localStorage, shows posters and release dates, lets you rewatch trailers, and opens a saved external provider page when you are ready.
+Mediager is a single-user movie queue for titles you want to download later. It stores your watchlist locally using browser IndexedDB, shows posters and release dates, lets you rewatch trailers, and opens a saved external provider page when you are ready.
 
 ## Stack
 
 - React + TypeScript + Vite frontend
-- LocalStorage for data persistence (no backend required)
+- IndexedDB for data persistence (no backend required)
 - TMDB API for optional metadata search and enrichment
 
 ## Setup
@@ -26,12 +26,14 @@ Mediager is a single-user movie queue for titles you want to download later. It 
 - Trailer playback from a stored or TMDB-provided YouTube URL
 - Digital release date tracking
 - External download/provider page button
-- Local browser storage (data persists across browser sessions)
+- Local IndexedDB storage (data persists across browser sessions)
 - Optional TMDB metadata search for movie information
 
 ## How It Works
 
-Mediager uses browser `localStorage` to persist your movie queue. All data is stored in a single key called `movies` with JSON array format. The entire application runs in the frontend bundle - no backend server is needed.
+Mediager uses browser IndexedDB to persist its movie queue and TMDB API key. All application data is stored in a database named `mediager`, which is used by every deployment environment.
+
+Browser storage is scoped to an origin, so a local server, beta domain, and production domain cannot automatically access the same IndexedDB data. Use the Settings export feature to move a backup between environments; automatic cross-environment synchronization requires a shared backend or hosted sync service.
 
 ## Notes
 

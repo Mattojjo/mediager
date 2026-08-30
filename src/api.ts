@@ -1,6 +1,6 @@
 import type { MediaType, MetadataDetails, MetadataSearchResult } from './types'
 import { listMovies as listLocalMovies, createMovie as dbCreate, updateMovie as dbUpdate, deleteMovie as dbDelete } from './db'
-import type { MovieRecord, MovieInput } from './db'
+import type { MovieInput } from './db'
 import { getStoredApiKey } from './keyManager'
 
 // ============================================================================
@@ -12,7 +12,7 @@ const POSTER_SIZE = 'w500'
 const BACKDROP_SIZE = 'w1280'
 
 async function tmdbFetch<T>(pathname: string, query: string = ''): Promise<T> {
-  const apiKey = getStoredApiKey()
+  const apiKey = await getStoredApiKey()
   if (!apiKey) throw new Error('TMDB API key not configured. Please add your API key in Settings.')
 
   const url = new URL(`${TMDB_BASE_URL}${pathname}`)
@@ -39,7 +39,7 @@ export async function searchMetadata(query: string, mediaType: MediaType): Promi
   if (!query.trim()) return []
 
   // Try TMDB if API key is configured
-  if (getStoredApiKey()) {
+  if (await getStoredApiKey()) {
     try {
       const endpoint = mediaType === 'movie' ? '/search/movie' : '/search/tv'
       const response = await tmdbFetch<any>(endpoint, query)
@@ -60,8 +60,8 @@ export async function searchMetadata(query: string, mediaType: MediaType): Promi
     }
   }
 
-  // Client-side search through localStorage
-  const movies = listLocalMovies() as MovieRecord[]
+  // Client-side search through the local IndexedDB database
+  const movies = await listLocalMovies()
   const queryLower = query.trim().toLowerCase()
 
   return movies
@@ -82,8 +82,8 @@ export async function searchMetadata(query: string, mediaType: MediaType): Promi
 }
 
 export async function getMetadataDetails(tmdbId: number, mediaType: MediaType): Promise<MetadataDetails> {
-  // Check local storage first
-  const records = listLocalMovies() as MovieRecord[]
+  // Check the local IndexedDB database first
+  const records = await listLocalMovies()
   const movie = records.find((m) => m.tmdbId === tmdbId)
   if (movie) {
     return {
@@ -99,7 +99,7 @@ export async function getMetadataDetails(tmdbId: number, mediaType: MediaType): 
   }
 
   // Try fetching from TMDB if configured
-  if (getStoredApiKey()) {
+  if (await getStoredApiKey()) {
     try {
       const endpoint = mediaType === 'movie' ? `/movie/${tmdbId}` : `/tv/${tmdbId}`
       const response = await tmdbFetch<any>(endpoint)
@@ -131,7 +131,7 @@ export async function getMetadataDetails(tmdbId: number, mediaType: MediaType): 
 }
 
 async function fetchTrailerUrl(tmdbId: number, mediaType: MediaType): Promise<string> {
-  if (!getStoredApiKey()) return ''
+  if (!await getStoredApiKey()) return ''
 
   try {
     const endpoint = mediaType === 'movie' ? `/movie/${tmdbId}/videos` : `/tv/${tmdbId}/videos`
@@ -154,18 +154,18 @@ async function fetchTrailerUrl(tmdbId: number, mediaType: MediaType): Promise<st
 // Database Operations
 // ============================================================================
 
-export function listMovies() {
-  return (listLocalMovies() as MovieRecord[]).map((r) => ({ ...r }))
+export async function listMovies() {
+  return (await listLocalMovies()).map((record) => ({ ...record }))
 }
 
-export function createMovie(input: MovieInput) {
+export async function createMovie(input: MovieInput) {
   return dbCreate(input)
 }
 
-export function updateMovie(id: number, input: MovieInput) {
+export async function updateMovie(id: number, input: MovieInput) {
   return dbUpdate(id, input)
 }
 
-export function deleteMovie(id: number) {
+export async function deleteMovie(id: number) {
   return dbDelete(id)
 }
