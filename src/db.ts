@@ -1,5 +1,3 @@
-import { get, set } from 'local-storage'
-
 export type MovieStatus = 'planned' | 'released' | 'downloaded'
 export type MediaType = 'movie' | 'tv'
 
@@ -38,11 +36,32 @@ export interface MovieInput {
   tmdbId?: number | null
 }
 
+function getMovies(): MovieRecord[] {
+  const raw = localStorage.getItem('movies')
+  return raw ? JSON.parse(raw) : []
+}
+
+function saveMovies(movies: MovieRecord[]): void {
+  localStorage.setItem('movies', JSON.stringify(movies))
+}
+
 let nextId = 0
 
-// Helper function to normalize movie input
-function normalizeMovieInput(input: MovieInput): Omit<MovieRecord, 'id' | 'createdAt' | 'updatedAt'> {
-  return {
+export function listMovies(): MovieRecord[] {
+  const movies = getMovies()
+  return movies.sort((a: MovieRecord, b: MovieRecord) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+export function getMovie(id: number): MovieRecord | undefined {
+  const movies: Map<number, MovieRecord> = new Map(
+    getMovies()?.map((movie: MovieRecord) => [movie.id, movie]) || []
+  )
+  return movies.get(id) as MovieRecord | undefined
+}
+
+export function createMovie(input: MovieInput): MovieRecord {
+  const movie: MovieRecord = {
+    id: 0,
     mediaType: input.mediaType ?? 'movie',
     title: input.title.trim(),
     year: input.year ?? null,
@@ -56,39 +75,21 @@ function normalizeMovieInput(input: MovieInput): Omit<MovieRecord, 'id' | 'creat
     notes: input.notes?.trim() ?? '',
     priority: input.priority ?? 2,
     tmdbId: input.tmdbId ?? null,
-  }
-}
-
-export function listMovies(): MovieRecord[] {
-  const movies: MovieRecord[] = get<MovieRecord[]>('movies') || []
-  return movies.sort((a: MovieRecord, b: MovieRecord) => b.updatedAt.localeCompare(a.updatedAt))
-}
-
-export function getMovie(id: number): MovieRecord | undefined {
-  const movies: Map<number, MovieRecord> = new Map(
-    (get<MovieRecord[]>('movies') || [])?.map((movie: MovieRecord) => [movie.id, movie])
-  )
-  return movies.get(id) as MovieRecord | undefined
-}
-
-export function createMovie(input: MovieInput): MovieRecord {
-  const base: Omit<MovieRecord, 'id' | 'createdAt' | 'updatedAt'> = normalizeMovieInput(input)
-
-  nextId++
-  const movie: MovieRecord = {
-    ...base,
-    id: nextId,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
 
-  set('movies', [...(listMovies() as unknown[]), movie])
+  nextId++
+  movie.id = nextId
+  const movies = getMovies()
+  movies.push(movie)
+  saveMovies(movies)
 
   return movie
 }
 
 export function updateMovie(id: number, input: MovieInput): MovieRecord | undefined {
-  const records = get<MovieRecord[]>('movies') || []
+  const records = getMovies()
 
   const existing = records.find((m: any) => m.id === id)
 
@@ -96,7 +97,8 @@ export function updateMovie(id: number, input: MovieInput): MovieRecord | undefi
     return undefined
   }
 
-  const updated: Omit<MovieRecord, 'id' | 'createdAt'> = {
+  const updated: MovieRecord = {
+    ...existing,
     mediaType: input.mediaType ?? existing.mediaType,
     title: input.title.trim(),
     year: input.year ?? null,
@@ -104,30 +106,27 @@ export function updateMovie(id: number, input: MovieInput): MovieRecord | undefi
     posterUrl: input.posterUrl?.trim() ?? '',
     backdropUrl: input.backdropUrl?.trim() ?? '',
     trailerUrl: input.trailerUrl?.trim() ?? '',
-    digitalReleaseDate: input.digitalReleaseDate || null,
-    providerPageUrl: input.providerPageUrl?.trim() ?? '',
-    status: input.status ?? 'planned',
-    notes: input.notes?.trim() ?? '',
-    priority: input.priority ?? 2,
-    tmdbId: input.tmdbId ?? null,
+    digitalReleaseDate: input.digitalReleaseDate ?? existing.digitalReleaseDate,
+    providerPageUrl: input.providerPageUrl?.trim() ?? existing.providerPageUrl,
+    status: input.status ?? existing.status,
+    notes: input.notes?.trim() ?? existing.notes,
+    priority: input.priority ?? existing.priority,
+    tmdbId: input.tmdbId ?? existing.tmdbId,
     updatedAt: new Date().toISOString(),
   }
 
   const index = records.findIndex((m: any) => m.id === id)
   if (index !== -1) {
-    records[index] = { ...existing, ...updated }
+    records[index] = updated
   }
 
-  set('movies', records)
+  saveMovies(records)
 
-  return { ...records.find((m: any) => m.id === id)! }
+  return records.find((m: any) => m.id === id)
 }
 
 export function deleteMovie(id: number): boolean {
-  const records = [...(get<MovieRecord[]>('movies') || [])]
-  const filtered = records.filter((m: any) => m.id !== id)
-
-  set('movies', filtered)
-
+  const records = getMovies().filter((m: any) => m.id !== id)
+  saveMovies(records)
   return true
 }
