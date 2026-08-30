@@ -5,10 +5,9 @@ import './Modal.css'
 interface SettingsModalProps {
   isOpen: boolean
   onClose: () => void
-  onKeyUpdated: () => void
 }
 
-export function SettingsModal({ isOpen, onClose, onKeyUpdated }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState(getStoredApiKey() || '')
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -44,7 +43,6 @@ export function SettingsModal({ isOpen, onClose, onKeyUpdated }: SettingsModalPr
       setSuccessMessage('API key saved successfully!')
       markSetupAsShown()
       setTimeout(() => {
-        onKeyUpdated()
         onClose()
       }, 1500)
     } catch (error) {
@@ -63,7 +61,6 @@ export function SettingsModal({ isOpen, onClose, onKeyUpdated }: SettingsModalPr
       setApiKey('')
       setErrorMessage('')
       setSuccessMessage('')
-      onKeyUpdated()
     }
   }
 

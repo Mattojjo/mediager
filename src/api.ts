@@ -1,76 +1,49 @@
-import type { MediaType, MetadataDetails, MetadataSearchResult, Movie } from './types'
+import type { MediaType, MetadataDetails, MetadataSearchResult } from './types'
+import { listMovies as listLocalMovies, createMovie as dbCreate, updateMovie as dbUpdate, deleteMovie as dbDelete } from './db'
+import type { MovieRecord, MovieInput } from './db'
+import { getStoredApiKey } from './keyManager'
 
-// Helper to parse year from date string
+// ============================================================================
+// TMDB API Integration
+// ============================================================================
+
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3'
+const POSTER_SIZE = 'w500'
+const BACKDROP_SIZE = 'w1280'
+
+async function tmdbFetch<T>(pathname: string, query: string = ''): Promise<T> {
+  const apiKey = getStoredApiKey()
+  if (!apiKey) throw new Error('TMDB API key not configured. Please add your API key in Settings.')
+
+  const url = new URL(`${TMDB_BASE_URL}${pathname}`)
+  url.searchParams.set('api_key', apiKey)
+  url.searchParams.set('language', 'en-US')
+  if (query) url.searchParams.set('query', query)
+
+  const response = await fetch(url.toString())
+  if (!response.ok) throw new Error(`TMDB request failed with status ${response.status}`)
+  return response.json() as Promise<T>
+}
+
 function parseYear(date: string | null): number | null {
-  if (!date) {
-    return null
-  }
-
+  if (!date) return null
   const year = Number(date.slice(0, 4))
   return Number.isFinite(year) ? year : null
 }
 
-// Import database functions
-import { 
-  listMovies as listLocalMovies, 
-  createMovie as dbCreateMovie,
-  updateMovie as dbUpdateMovie,
-  deleteMovie as dbDeleteMovie
-} from './db'
-
-// Import types
-import type { MovieRecord, MovieInput } from './db'
-
-// Import key manager for localStorage API key
-import { getStoredApiKey } from './keyManager'
-
-async function tmdbSearch<T>(pathname: string, query: string = '', options: Record<string, string> = {}): Promise<T> {
-  const baseUrl = 'https://api.themoviedb.org/3'
-  const url = new URL(`${baseUrl}${pathname}`)
-  url.searchParams.set('language', 'en-US')
-  
-  // Get the API key from localStorage
-  const tmdbApiKey = getStoredApiKey()
-  
-  if (!tmdbApiKey) {
-    throw new Error('TMDB API key not configured. Please add your API key in Settings.')
-  }
-  
-  if (query) {
-    url.searchParams.set('query', query)
-  }
-
-  url.searchParams.set('api_key', tmdbApiKey)
-  url.searchParams.set('include_adult', 'false')
-  url.searchParams.set('page', '1')
-
-  for (const [key, value] of Object.entries(options)) {
-    url.searchParams.set(key, value)
-  }
-
-  const response = await fetch(url.toString())
-
-
-  if (!response.ok) {
-    throw new Error(`TMDB request failed with status ${response.status}`)
-  }
-
-  return (await response.json()) as T
-}
+// ============================================================================
+// Public API Functions
+// ============================================================================
 
 export async function searchMetadata(query: string, mediaType: MediaType): Promise<MetadataSearchResult[]> {
-  const results: MetadataSearchResult[] = []
+  if (!query.trim()) return []
 
-  if (!query.trim()) {
-    return results
-  }
-
-  // Try TMDB search if API key is configured
+  // Try TMDB if API key is configured
   if (getStoredApiKey()) {
     try {
       const endpoint = mediaType === 'movie' ? '/search/movie' : '/search/tv'
-      const response = await tmdbSearch<any>(endpoint, query)
-      if (response.results && Array.isArray(response.results)) {
+      const response = await tmdbFetch<any>(endpoint, query)
+      if (response.results?.length) {
         return response.results
           .slice(0, 8)
           .filter((r: any) => r.title || r.name)
@@ -79,11 +52,11 @@ export async function searchMetadata(query: string, mediaType: MediaType): Promi
             title: r.title ?? r.name ?? 'Unknown',
             year: parseYear(r.release_date ?? r.first_air_date),
             overview: r.overview,
-            posterUrl: r.poster_path ? `https://image.tmdb.org/t/p/w500${r.poster_path}` : '',
+            posterUrl: r.poster_path ? `https://image.tmdb.org/t/p/${POSTER_SIZE}${r.poster_path}` : '',
           }))
       }
-    } catch (error) {
-      // Fall through to client-side search if TMDB fails
+    } catch {
+      // Fall through to local search
     }
   }
 
@@ -92,12 +65,11 @@ export async function searchMetadata(query: string, mediaType: MediaType): Promi
   const queryLower = query.trim().toLowerCase()
 
   return movies
-    .filter(
-      (m) =>
-        (m.title?.toLowerCase().includes(queryLower) ||
-          m.overview?.toLowerCase().includes(queryLower) ||
-          m.notes?.toLowerCase().includes(queryLower)) &&
-        m.mediaType === mediaType,
+    .filter((m) =>
+      (m.title?.toLowerCase().includes(queryLower) ||
+        m.overview?.toLowerCase().includes(queryLower) ||
+        m.notes?.toLowerCase().includes(queryLower)) &&
+      m.mediaType === mediaType,
     )
     .map((m) => ({
       tmdbId: m.tmdbId!,
@@ -110,9 +82,9 @@ export async function searchMetadata(query: string, mediaType: MediaType): Promi
 }
 
 export async function getMetadataDetails(tmdbId: number, mediaType: MediaType): Promise<MetadataDetails> {
-  // First check localStorage
+  // Check local storage first
   const records = listLocalMovies() as MovieRecord[]
-  const movie = records.find((m: MovieRecord) => m.tmdbId === tmdbId)
+  const movie = records.find((m) => m.tmdbId === tmdbId)
   if (movie) {
     return {
       tmdbId: movie.tmdbId ?? 0,
@@ -121,7 +93,7 @@ export async function getMetadataDetails(tmdbId: number, mediaType: MediaType): 
       overview: movie.overview,
       posterUrl: movie.posterUrl,
       backdropUrl: movie.backdropUrl,
-      trailerUrl: movie.trailerUrl,
+      trailerUrl: await fetchTrailerUrl(tmdbId, mediaType),
       digitalReleaseDate: movie.digitalReleaseDate,
     }
   }
@@ -130,26 +102,25 @@ export async function getMetadataDetails(tmdbId: number, mediaType: MediaType): 
   if (getStoredApiKey()) {
     try {
       const endpoint = mediaType === 'movie' ? `/movie/${tmdbId}` : `/tv/${tmdbId}`
-      const response = await tmdbSearch<any>(endpoint)
+      const response = await tmdbFetch<any>(endpoint)
       return {
         tmdbId: response.id,
-        title: response.title ?? response.name ?? 'Unknown Movie',
+        title: response.title ?? response.name ?? 'Unknown',
         year: parseYear(response.release_date ?? response.first_air_date),
         overview: response.overview ?? 'No overview available.',
-        posterUrl: response.poster_path ? `https://image.tmdb.org/t/p/w500${response.poster_path}` : '',
-        backdropUrl: response.backdrop_path ? `https://image.tmdb.org/t/p/w1280${response.backdrop_path}` : '',
-        trailerUrl: '',
+        posterUrl: response.poster_path ? `https://image.tmdb.org/t/p/${POSTER_SIZE}${response.poster_path}` : '',
+        backdropUrl: response.backdrop_path ? `https://image.tmdb.org/t/p/${BACKDROP_SIZE}${response.backdrop_path}` : '',
+        trailerUrl: await fetchTrailerUrl(tmdbId, mediaType),
         digitalReleaseDate: null,
       }
-    } catch (error) {
-      // Fall back to placeholder if TMDB fails
+    } catch {
+      // Fall back to placeholder
     }
   }
 
-  // Return placeholder if not found anywhere
   return {
-    tmdbId: tmdbId,
-    title: 'Unknown Movie',
+    tmdbId,
+    title: 'Unknown',
     year: null,
     overview: 'No overview available.',
     posterUrl: '',
@@ -159,19 +130,42 @@ export async function getMetadataDetails(tmdbId: number, mediaType: MediaType): 
   }
 }
 
-export function listMovies(): Movie[] {
-  const records = listLocalMovies() as MovieRecord[]
-  return records.map((r: MovieRecord) => ({ ...r }))
+async function fetchTrailerUrl(tmdbId: number, mediaType: MediaType): Promise<string> {
+  if (!getStoredApiKey()) return ''
+
+  try {
+    const endpoint = mediaType === 'movie' ? `/movie/${tmdbId}/videos` : `/tv/${tmdbId}/videos`
+    const response = await tmdbFetch<any>(endpoint)
+
+    if (!response.results?.length) return ''
+
+    // Prefer official trailers first
+    const trailer = response.results.find(
+      (v: any) => v.type === 'Trailer' && v.site === 'YouTube' && v.official,
+    ) || response.results.find((v: any) => v.type === 'Trailer' && v.site === 'YouTube')
+
+    return trailer?.key ? `https://www.youtube.com/watch?v=${trailer.key}` : ''
+  } catch {
+    return ''
+  }
 }
 
-export function createMovie(input: MovieInput): Movie {
-  return dbCreateMovie(input) as Movie
+// ============================================================================
+// Database Operations
+// ============================================================================
+
+export function listMovies() {
+  return (listLocalMovies() as MovieRecord[]).map((r) => ({ ...r }))
 }
 
-export function updateMovie(id: number, input: MovieInput): Movie | undefined {
-  return dbUpdateMovie(id, input) as Movie | undefined
+export function createMovie(input: MovieInput) {
+  return dbCreate(input)
 }
 
-export function deleteMovie(id: number): boolean {
-  return dbDeleteMovie(id)
+export function updateMovie(id: number, input: MovieInput) {
+  return dbUpdate(id, input)
+}
+
+export function deleteMovie(id: number) {
+  return dbDelete(id)
 }

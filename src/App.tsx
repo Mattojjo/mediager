@@ -49,7 +49,6 @@ function App() {
   const [errorMessage, setErrorMessage] = useState('')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [showApiKeySetup, setShowApiKeySetup] = useState(!hasApiKey() && !hasSetupBeenShown())
-  const [keyUpdatedTrigger, setKeyUpdatedTrigger] = useState(0)
 
   const isAutoCreatingFromMetadata = isSaving && !editingMovie
 
@@ -885,7 +884,6 @@ function App() {
         <ApiKeySetup
           onComplete={() => {
             setShowApiKeySetup(false)
-            setKeyUpdatedTrigger((prev) => prev + 1)
           }}
         />
       )}
@@ -893,9 +891,6 @@ function App() {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        onKeyUpdated={() => {
-          setKeyUpdatedTrigger((prev) => prev + 1)
-        }}
       />
     </div>
   )
