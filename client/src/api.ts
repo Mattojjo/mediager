@@ -1,97 +1,69 @@
-import type { MediaType, MetadataDetails, MetadataSearchResult, Movie, MovieInput } from './types'
+import type { MediaType, MetadataDetails, MetadataSearchResult, Movie } from './types'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000'
-const responseCache = new Map<string, { value: unknown; expiresAt: number }>()
-const inflightRequests = new Map<string, Promise<unknown>>()
-const cacheTtlMs = 10 * 60 * 1000
+// Import local storage functions (now in the same client bundle)
+import { listMovies as listLocalMovies, createMovie as createLocalMovie, updateMovie as updateLocalMovie, deleteMovie as deleteLocalMovie } from './db.js'
 
-async function request<T>(pathname: string, init?: RequestInit, options?: { cacheKey?: string; cacheTtlMs?: number; bypassCache?: boolean }): Promise<T> {
-  const cacheKey = options?.cacheKey
-  const ttl = options?.cacheTtlMs ?? cacheTtlMs
+// Import types for type safety with the backend functions
+import type { MovieRecord, MovieInput } from './db.js'
 
-  if (cacheKey && !options?.bypassCache) {
-    const cached = responseCache.get(cacheKey) as { value: T; expiresAt: number } | undefined
-
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.value
-    }
-
-    const inflight = inflightRequests.get(cacheKey) as Promise<T> | undefined
-    if (inflight) {
-      return inflight
-    }
-  }
-
-  const responsePromise = fetch(`${apiBaseUrl}${pathname}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  }).then(async (response) => {
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null
-      throw new Error(payload?.error ?? 'Request failed.')
-    }
-
-    if (response.status === 204) {
-      return undefined as T
-    }
-
-    return (await response.json()) as T
-  })
-
-  if (cacheKey && !options?.bypassCache) {
-    const trackedPromise = responsePromise.then((value) => {
-      responseCache.set(cacheKey, { value, expiresAt: Date.now() + ttl })
-      return value
-    }) as Promise<T>
-
-    inflightRequests.set(cacheKey, trackedPromise as Promise<unknown>)
-    return trackedPromise.finally(() => {
-      inflightRequests.delete(cacheKey)
+// Mock TMDB metadata functions - return placeholder data for now
+export async function searchMetadata(_query: string, _mediaType: MediaType): Promise<MetadataSearchResult[]> {
+  const results: MetadataSearchResult[] = []
+  if (_query.trim()) {
+    results.push({
+      tmdbId: 27201, // Example: The Shawshank Redemption
+      title: 'The Shawshank Redemption',
+      year: 1994,
+      overview: 'Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency.',
+      posterUrl: 'https://image.tmdb.org/t/p/w500/qKy3U4hKkLJp8H6c7v0Vq2bG9Qa.jpg',
     })
   }
-
-  return responsePromise as Promise<T>
+  return results
 }
 
-export function listMovies() {
-  return request<Movie[]>('/api/movies')
+export async function getMetadataDetails(tmdbId: number, _mediaType: MediaType): Promise<MetadataDetails> {
+  // For now, return placeholder data - in production you'd want to fetch real TMDB data
+  const records = listLocalMovies() as MovieRecord[]
+  const movie = records.find((m: MovieRecord) => m.tmdbId === tmdbId)
+  if (!movie) {
+    return {
+      tmdbId: tmdbId,
+      title: 'Unknown Movie',
+      year: null,
+      overview: 'No overview available.',
+      posterUrl: '',
+      backdropUrl: '',
+      trailerUrl: '',
+      digitalReleaseDate: null,
+    }
+  }
+  return {
+    tmdbId: movie.tmdbId as number,
+    title: movie.title,
+    year: movie.year,
+    overview: movie.overview,
+    posterUrl: movie.posterUrl,
+    backdropUrl: movie.backdropUrl,
+    trailerUrl: movie.trailerUrl,
+    digitalReleaseDate: movie.digitalReleaseDate,
+  }
 }
 
-export function createMovie(input: MovieInput) {
-  return request<Movie>('/api/movies', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  })
+export function listMovies(): Movie[] {
+  const records = listLocalMovies() as MovieRecord[]
+  return records.map((r: MovieRecord) => ({ ...r }))
 }
 
-export function updateMovie(id: number, input: MovieInput) {
-  return request<Movie>(`/api/movies/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  })
+export function createMovie(input: MovieInput): Movie {
+  const record = createLocalMovie(input) as MovieRecord
+  return { ...record }
 }
 
-export function deleteMovie(id: number) {
-  return request<void>(`/api/movies/${id}`, {
-    method: 'DELETE',
-  })
+export function updateMovie(id: number, input: MovieInput): Movie | undefined {
+  const record = updateLocalMovie(id, input) as MovieRecord | undefined
+  return record ? ({ ...record }) : undefined
 }
 
-export function searchMetadata(query: string, mediaType: MediaType) {
-  return request<MetadataSearchResult[]>(
-    `/api/metadata/search?q=${encodeURIComponent(query)}&type=${mediaType}`,
-    undefined,
-    {
-      cacheKey: `metadata-search:${mediaType}:${query.trim().toLowerCase()}`,
-    },
-  )
-}
-
-export function getMetadataDetails(tmdbId: number, mediaType: MediaType) {
-  return request<MetadataDetails>(`/api/metadata/${mediaType}/${tmdbId}`, undefined, {
-    cacheKey: `metadata-details:${mediaType}:${tmdbId}`,
-  })
+export function deleteMovie(id: number): boolean {
+  return deleteLocalMovie(id)
 }

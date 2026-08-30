@@ -2,14 +2,24 @@
   "name": "mediager",
   "private": true,
   "version": "0.1.0",
+  "description": "Single-user movie queue with local storage persistence",
+  "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n server,client -c green,blue \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:client": "npm --prefix client run dev",
-    "dev:server": "npm --prefix server run dev",
-    "build": "npm --prefix server run build && npm --prefix client run build",
+    "dev": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
     "lint": "npm --prefix client run lint"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.65.0",
+    "vite": "^8.2.0"
   }
 }
