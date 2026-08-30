@@ -256,6 +256,4 @@ export function formatRelease(date: string | null): string {
   })
 }
 
-export function today(): string {
-  return new Date().toISOString().slice(0, 10)
-}
+

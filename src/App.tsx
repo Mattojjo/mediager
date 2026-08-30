@@ -11,6 +11,7 @@ import type { MediaType, MetadataSearchResult, Movie, MovieInput, MovieStatus } 
 import { hasApiKey, hasSetupBeenShown } from './keyManager'
 import { SettingsModal } from './SettingsModal'
 import { ApiKeySetup } from './ApiKeySetup'
+import { formatRelease } from './hooks'
 
 const emptyForm: MovieInput = {
   mediaType: 'movie',
@@ -24,7 +25,7 @@ const emptyForm: MovieInput = {
   providerPageUrl: '',
   status: 'planned',
   notes: '',
-  priority: 2,
+  priority: 1,
   tmdbId: null,
 }
 
@@ -38,7 +39,7 @@ function App() {
   const [activeMediaType, setActiveMediaType] = useState<MediaType>('movie')
   const [filter, setFilter] = useState<'all' | MovieStatus>('all')
   const [searchText, setSearchText] = useState('')
-  const [sortMode, setSortMode] = useState<'release' | 'recent' | 'priority'>('release')
+  const [sortMode, setSortMode] = useState<'release' | 'recent'>('release')
   const [metadataQuery, setMetadataQuery] = useState('')
   const [metadataResults, setMetadataResults] = useState<MetadataSearchResult[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -72,10 +73,6 @@ function App() {
         )
       })
       .sort((left, right) => {
-        if (sortMode === 'priority') {
-          return right.priority - left.priority || left.title.localeCompare(right.title)
-        }
-
         if (sortMode === 'recent') {
           return right.updatedAt.localeCompare(left.updatedAt)
         }
@@ -126,10 +123,10 @@ function App() {
       backdropUrl: movie.backdropUrl,
       trailerUrl: movie.trailerUrl,
       digitalReleaseDate: movie.digitalReleaseDate,
-      providerPageUrl: movie.providerPageUrl,
+      providerPageUrl: '',
       status: movie.status,
       notes: movie.notes,
-      priority: movie.priority,
+      priority: 1,
       tmdbId: movie.tmdbId,
     })
     setMetadataQuery(movie.title)
@@ -302,7 +299,6 @@ function App() {
     setForm((current) => ({
       ...current,
       title: current.title || (!looksLikeUrl ? trimmedValue : inferredTitle),
-      providerPageUrl: looksLikeUrl ? trimmedValue : current.providerPageUrl,
     }))
   }
 
@@ -318,10 +314,6 @@ function App() {
   }
 
   function getMovieDestination(movie: Movie) {
-    if (movie.providerPageUrl) {
-      return movie.providerPageUrl
-    }
-
     if (!movie.tmdbId) {
       return ''
     }
@@ -345,12 +337,6 @@ function App() {
   }
 
   const queuedCount = movies.filter((movie) => movie.mediaType === activeMediaType).length
-  const readyCount = movies.filter(
-    (movie) =>
-      movie.mediaType === activeMediaType &&
-      movie.digitalReleaseDate &&
-      movie.digitalReleaseDate <= today(),
-  ).length
 
   return (
     <div className="app-shell">
@@ -388,10 +374,6 @@ function App() {
               <span>{activeMediaType === 'movie' ? 'Movies' : 'Shows'}</span>
               <strong>{queuedCount}</strong>
             </div>
-            <div className="stat-chip accent">
-              <span>Released</span>
-              <strong>{readyCount}</strong>
-            </div>
           </div>
 
           <div className="top-bar__actions">
@@ -402,7 +384,7 @@ function App() {
               disabled={isLoading || isSaving || isSearchingMetadata || isDeleting}
               title="Settings"
             >
-              ⚙️
+              Settings
             </button>
             <button
               type="button"
@@ -446,22 +428,14 @@ function App() {
 
         <label>
           <span>Sort by</span>
-          <select value={sortMode} onChange={(event) => setSortMode(event.target.value as 'release' | 'recent' | 'priority')}>
+          <select value={sortMode} onChange={(event) => setSortMode(event.target.value as 'release' | 'recent')}>
             <option value="release">Release date</option>
             <option value="recent">Recently updated</option>
-            <option value="priority">Priority</option>
           </select>
         </label>
       </section>
 
-      {statusMessage ? (
-        <div className="loading-indicator" role="status" aria-live="polite">
-          <span className="loading-spinner" />
-          <span>{statusMessage}</span>
-        </div>
-      ) : null}
-
-      {errorMessage ? <p className="banner error">{errorMessage}</p> : null}
+      {errorMessage && !isEditorOpen ? <p className="banner error">{errorMessage}</p> : null}
 
       {isLoading ? (
         <section className="empty-state">
@@ -515,7 +489,6 @@ function App() {
                 </div>
                 <div className="movie-card-meta">
                   <span>{formatRelease(movie.digitalReleaseDate)}</span>
-                  <span>Priority {movie.priority}</span>
                 </div>
               </div>
             </article>
@@ -602,14 +575,6 @@ function App() {
                       <dt>{selectedMovie.mediaType === 'tv' ? 'First air date' : 'Digital release'}</dt>
                       <dd>{formatRelease(selectedMovie.digitalReleaseDate)}</dd>
                     </div>
-                    <div>
-                      <dt>Priority</dt>
-                      <dd>{selectedMovie.priority}</dd>
-                    </div>
-                    <div>
-                      <dt>Provider page</dt>
-                      <dd>{selectedMovie.providerPageUrl || 'Using TMDB page fallback'}</dd>
-                    </div>
                   </dl>
                   <div className="notes-block">
                     <h3>Notes</h3>
@@ -654,6 +619,15 @@ function App() {
                 Close
               </button>
             </div>
+
+            {statusMessage ? (
+              <div className="loading-indicator" role="status" aria-live="polite">
+                <span className="loading-spinner" />
+                <span>{statusMessage}</span>
+              </div>
+            ) : null}
+
+            {errorMessage ? <p className="banner error">{errorMessage}</p> : null}
 
             <div
               className="metadata-search-box quick-add-box"
@@ -730,17 +704,6 @@ function App() {
               </label>
 
               <label>
-                <span>Download page URL</span>
-                <input
-                  placeholder="https://example.com/movies/title-2026"
-                  value={form.providerPageUrl}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, providerPageUrl: event.target.value }))
-                  }
-                />
-              </label>
-
-              <label>
                 <span>Status</span>
                 <select
                   value={form.status}
@@ -752,19 +715,6 @@ function App() {
                   <option value="released">Released</option>
                   <option value="downloaded">Downloaded</option>
                 </select>
-              </label>
-
-              <label>
-                <span>Priority</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={form.priority}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, priority: Number(event.target.value) || 1 }))
-                  }
-                />
               </label>
 
               <div className="full-span">
@@ -902,7 +852,7 @@ function buildSubmissionForm(form: MovieInput, metadataQuery: string): MovieInpu
   return {
     ...form,
     title: form.title.trim() || inferredTitle,
-    providerPageUrl: form.providerPageUrl.trim(),
+    providerPageUrl: '',
     overview: form.overview.trim(),
     posterUrl: form.posterUrl.trim(),
     backdropUrl: form.backdropUrl.trim(),
@@ -943,18 +893,6 @@ function isLikelyUrl(value: string) {
   return /^https?:\/\//i.test(value)
 }
 
-function formatRelease(date: string | null) {
-  if (!date) {
-    return 'Release date not set'
-  }
-
-  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
-
 function toEmbedUrl(url: string) {
   try {
     const parsed = new URL(url)
@@ -971,10 +909,6 @@ function toEmbedUrl(url: string) {
   } catch {
     return url
   }
-}
-
-function today() {
-  return new Date().toISOString().slice(0, 10)
 }
 
 export default App
